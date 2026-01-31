@@ -1,3 +1,5 @@
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { getPrisma } from "@/lib/server/prisma";
 import {
   courses as mockCourses,
@@ -40,7 +42,7 @@ export type QuizQuestionDetail = {
 const hasDatabase = () =>
   Boolean(process.env.DATABASE_URL && getPrisma());
 
-export async function listCourses(): Promise<CourseOverview[]> {
+async function listCoursesUncached(): Promise<CourseOverview[]> {
   if (!hasDatabase()) {
     return mockCourses.map((course) => {
       const courseLessons = getMockCourseLessons(course.id);
@@ -64,7 +66,6 @@ export async function listCourses(): Promise<CourseOverview[]> {
     },
     orderBy: { title: "asc" },
   });
-
   return dbCourses.map((course) => ({
     id: course.id,
     title: course.title,
@@ -75,7 +76,7 @@ export async function listCourses(): Promise<CourseOverview[]> {
   }));
 }
 
-export async function getCourse(courseId: string) {
+async function getCourseUncached(courseId: string) {
   if (!hasDatabase()) {
     return getMockCourse(courseId) ?? null;
   }
@@ -86,7 +87,9 @@ export async function getCourse(courseId: string) {
   });
 }
 
-export async function getLesson(lessonId: string): Promise<LessonDetail | null> {
+async function getLessonUncached(
+  lessonId: string,
+): Promise<LessonDetail | null> {
   if (!hasDatabase()) {
     return getMockLesson(lessonId) ?? null;
   }
@@ -97,7 +100,7 @@ export async function getLesson(lessonId: string): Promise<LessonDetail | null> 
   });
 }
 
-export async function listLessons(courseId: string): Promise<LessonDetail[]> {
+async function listLessonsUncached(courseId: string): Promise<LessonDetail[]> {
   if (!hasDatabase()) {
     return getMockCourseLessons(courseId);
   }
@@ -213,7 +216,7 @@ export type GameLevelConfig = {
   configJson: { prompt: string; choices: string[]; answer: string };
 };
 
-export async function listGames(): Promise<GameOverview[]> {
+async function listGamesUncached(): Promise<GameOverview[]> {
   if (!hasDatabase()) {
     return mockGames.map((game) => ({
       id: game.id,
@@ -239,7 +242,7 @@ export async function listGames(): Promise<GameOverview[]> {
   }));
 }
 
-export async function getGame(gameId: string) {
+async function getGameUncached(gameId: string) {
   if (!hasDatabase()) {
     return getMockGame(gameId) ?? null;
   }
@@ -250,7 +253,7 @@ export async function getGame(gameId: string) {
   });
 }
 
-export async function getGameWithLevels(
+async function getGameWithLevelsUncached(
   gameId: string,
 ): Promise<{ game: { id: string; title: string; description: string }; levels: GameLevelConfig[] } | null> {
   if (!hasDatabase()) {
@@ -297,6 +300,14 @@ export async function getGameWithLevels(
   };
 }
 
+export const listCourses = cache(listCoursesUncached);
+export const getCourse = cache(getCourseUncached);
+export const getLesson = cache(getLessonUncached);
+export const listLessons = cache(listLessonsUncached);
+export const listGames = cache(listGamesUncached);
+export const getGame = cache(getGameUncached);
+export const getGameWithLevels = cache(getGameWithLevelsUncached);
+
 export type ContinueWatchingItem = {
   lessonId: string;
   courseId: string;
@@ -313,9 +324,12 @@ export type DashboardStats = {
   streakDays: number;
 };
 
-export async function getDashboardStats(
+async function getDashboardStatsUncached(
   userId: string,
 ): Promise<DashboardStats> {
+  if (process.env.DEBUG_CACHE === "1") {
+    console.log(`[cache-miss] getDashboardStats user=${userId}`);
+  }
   if (!hasDatabase()) {
     return {
       continueWatching: null,
@@ -361,34 +375,44 @@ export async function getDashboardStats(
   startOfWeek.setDate(now.getDate() - mondayOffset);
   startOfWeek.setHours(0, 0, 0, 0);
 
-  const [completedTotal, completedThisWeek] = await Promise.all([
-    prisma.lessonProgress.count({
-      where: { userId, completedAt: { not: null } },
-    }),
-    prisma.lessonProgress.count({
-      where: {
-        userId,
-        completedAt: { not: null, gte: startOfWeek },
-      },
-    }),
-  ]);
+  const counts = await prisma.$queryRaw<{ total: bigint; week: bigint }[]>`
+    SELECT
+      COUNT(*) FILTER (WHERE "completedAt" IS NOT NULL) AS total,
+      COUNT(*) FILTER (WHERE "completedAt" >= ${startOfWeek}) AS week
+    FROM "LessonProgress"
+    WHERE "userId" = ${userId};
+  `;
 
-  // Streak: consecutive days with at least one completion, ending on most recent completion date
-  const completions = await prisma.lessonProgress.findMany({
-    where: { userId, completedAt: { not: null } },
-    select: { completedAt: true },
-  });
+  const completedTotal = Number(counts?.[0]?.total ?? 0);
+  const completedThisWeek = Number(counts?.[0]?.week ?? 0);
 
-  const completionDates = new Set(
-    completions.map((c) => c.completedAt!.toISOString().slice(0, 10)),
-  );
-  const sortedDates = Array.from(completionDates).sort().reverse();
+  if (completedTotal === 0) {
+    return {
+      continueWatching,
+      completedTotal,
+      completedThisWeek,
+      streakDays: 0,
+    };
+  }
+
+  const completionDates = await prisma.$queryRaw<{ date: Date }[]>`
+    SELECT DISTINCT DATE("completedAt") AS date
+    FROM "LessonProgress"
+    WHERE "userId" = ${userId}
+      AND "completedAt" IS NOT NULL
+    ORDER BY date DESC;
+  `;
+
+  const sortedDates = completionDates
+    .map((row) => row.date.toISOString().slice(0, 10))
+    .filter(Boolean);
 
   let streakDays = 0;
   if (sortedDates.length > 0) {
     const mostRecent = sortedDates[0];
     const check = new Date(mostRecent + "T00:00:00.000Z");
-    while (completionDates.has(check.toISOString().slice(0, 10))) {
+    const completionDateSet = new Set(sortedDates);
+    while (completionDateSet.has(check.toISOString().slice(0, 10))) {
       streakDays++;
       check.setUTCDate(check.getUTCDate() - 1);
     }
@@ -401,6 +425,13 @@ export async function getDashboardStats(
     streakDays,
   };
 }
+
+export const getDashboardStats = (userId: string) =>
+  unstable_cache(
+    () => getDashboardStatsUncached(userId),
+    ["dashboard-stats", userId],
+    { revalidate: 60, tags: [`dashboard-stats:${userId}`] },
+  )();
 
 export async function listQuizQuestions(
   lessonId: string,
