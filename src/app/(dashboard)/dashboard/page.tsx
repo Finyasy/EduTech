@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import SiteHeader from "@/components/shared/SiteHeader";
-import { ensureUser } from "@/lib/server/auth";
+import { ensureUserWithTimeout } from "@/lib/server/auth";
 import { getDashboardStats } from "@/lib/server/data";
 
 function isClerkConfigured(): boolean {
@@ -11,7 +11,7 @@ function isClerkConfigured(): boolean {
 
 export default async function DashboardPage() {
   const clerkOn = isClerkConfigured();
-  const user = clerkOn ? await ensureUser() : null;
+  const user = clerkOn ? await ensureUserWithTimeout(3000) : null;
 
   if (clerkOn && !user) {
     redirect(`/sign-in?redirect_url=${encodeURIComponent("/dashboard")}`);
