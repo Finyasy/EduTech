@@ -6,7 +6,7 @@ export default async function CoursesPage() {
   const courses = await listCourses();
   return (
     <div className="min-h-screen bg-amber-50">
-      <SiteHeader />
+      <SiteHeader withAuth={false} />
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
         <header className="mb-10 space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
