@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { notFound, redirect } from "next/navigation";
 import SiteHeader from "@/components/shared/SiteHeader";
-import { getGame, getGameWithLevels } from "@/lib/server/data";
+import { getGameWithLevels } from "@/lib/server/data";
 import GamePlay from "./client/GamePlay";
 
 type GamePageProps = {
@@ -10,20 +11,20 @@ type GamePageProps = {
 
 export default async function GamePage({ params }: GamePageProps) {
   const { gameId } = await params;
-  const [game, data] = await Promise.all([
-    getGame(gameId),
-    getGameWithLevels(gameId),
-  ]);
+  const data = await getGameWithLevels(gameId);
 
   const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const isClerkConfigured =
     Boolean(clerkPublishableKey?.startsWith("pk_") && !clerkPublishableKey.endsWith("..."));
 
-  if (!data) {
-    notFound();
+  if (isClerkConfigured) {
+    const { userId } = await auth();
+    if (!userId) {
+      redirect(`/sign-in?redirect_url=${encodeURIComponent(`/games/${gameId}`)}`);
+    }
   }
 
-  if (game && "isPublished" in game && !game.isPublished) {
+  if (!data) {
     notFound();
   }
 
