@@ -15,6 +15,8 @@ Create a `.env.local` file (not committed) and set your keys:
 ```bash
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 CLERK_SECRET_KEY=YOUR_SECRET_KEY
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 ```
 
 Notes:
@@ -29,7 +31,13 @@ A Clerk middleware proxy is defined in `src/proxy.ts` using `clerkMiddleware()` 
 
 `src/app/layout.tsx` wraps the app in `<ClerkProvider>` and renders Clerk UI components for signed-in/signed-out states.
 
-## 5) Run the app
+## 5) Auth routes
+
+The app includes:
+- `/sign-in` (`src/app/(auth)/sign-in/[[...sign-in]]/page.tsx`)
+- `/sign-up` (`src/app/(auth)/sign-up/[[...sign-up]]/page.tsx`)
+
+## 6) Run the app
 
 ```bash
 pnpm dev
