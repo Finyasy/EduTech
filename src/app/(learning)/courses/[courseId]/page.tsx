@@ -13,11 +13,11 @@ export async function generateMetadata({
 }: CourseDetailPageProps): Promise<Metadata> {
   const { courseId } = await params;
   const course = await getCourse(courseId);
-  if (!course) return { title: "Course | EduTech" };
+  if (!course) return { title: "Course | LearnBridge" };
   if ("isPublished" in course && !course.isPublished) {
-    return { title: "Course | EduTech" };
+    return { title: "Course | LearnBridge" };
   }
-  return { title: `${course.title} | EduTech` };
+  return { title: `${course.title} | LearnBridge` };
 }
 
 export default async function CourseDetailPage({ params }: CourseDetailPageProps) {
@@ -46,7 +46,7 @@ export default async function CourseDetailPage({ params }: CourseDetailPageProps
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <SiteHeader />
+      <SiteHeader withAuth={false} />
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
         <header className="mb-10 space-y-6">
           <div
