@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  STUDENT
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  SHORT_ANSWER
+}
+
+model User {
+  id           String          @id
+  email        String          @unique
+  name         String?
+  role         UserRole        @default(STUDENT)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  progress     LessonProgress[]
+  quizAttempts QuizAttempt[]
+  gameAttempts GameAttempt[]
+  gameBests    GameBest[]
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  gradeLevel  String
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id          String          @id @default(cuid())
+  courseId    String
+  title       String
+  videoId     String
+  order       Int
+  notes       String
+  isPublished Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  course      Course          @relation(fields: [courseId], references: [id])
+  questions   QuizQuestion[]
+  progress    LessonProgress[]
+  attempts    QuizAttempt[]
+
+  @@unique([courseId, order])
+}
+
+model QuizQuestion {
+  id          String       @id @default(cuid())
+  lessonId    String
+  type        QuestionType
+  question    String
+  options     Json?
+  answer      String
+  explanation String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  lesson      Lesson       @relation(fields: [lessonId], references: [id])
+}
+
+model Game {
+  id          String      @id @default(cuid())
+  title       String
+  description String
+  isPublished Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  levels      GameLevel[]
+  bests       GameBest[]
+}
+
+model GameLevel {
+  id          String        @id @default(cuid())
+  gameId      String
+  levelNumber Int
+  configJson  Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  game        Game          @relation(fields: [gameId], references: [id])
+  attempts    GameAttempt[]
+
+  @@unique([gameId, levelNumber])
+}
+
+model LessonProgress {
+  id           String   @id @default(cuid())
+  userId       String
+  lessonId     String
+  completedAt  DateTime?
+  watchPercent Int
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id])
+  lesson       Lesson   @relation(fields: [lessonId], references: [id])
+
+  @@unique([userId, lessonId])
+}
+
+model QuizAttempt {
+  id          String   @id @default(cuid())
+  userId      String
+  lessonId    String
+  score       Int
+  submittedAt DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  lesson      Lesson   @relation(fields: [lessonId], references: [id])
+}
+
+model GameAttempt {
+  id          String   @id @default(cuid())
+  userId      String
+  gameLevelId String
+  score       Int
+  timeMs      Int
+  submittedAt DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  level       GameLevel @relation(fields: [gameLevelId], references: [id])
+}
+
+model GameBest {
+  id         String   @id @default(cuid())
+  userId     String
+  gameId     String
+  bestScore  Int
+  bestTimeMs Int
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id])
+  game       Game     @relation(fields: [gameId], references: [id])
+
+  @@unique([userId, gameId])
+}
