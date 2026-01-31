@@ -9,10 +9,11 @@ type LessonPageProps = {
 };
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-const isClerkConfigured =
+const isClerkConfigured = Boolean(
   clerkPublishableKey &&
-  clerkPublishableKey.startsWith("pk_") &&
-  !clerkPublishableKey.endsWith("...");
+    clerkPublishableKey.startsWith("pk_") &&
+    !clerkPublishableKey.endsWith("..."),
+);
 
 export default async function LessonPage({ params }: LessonPageProps) {
   const { courseId, lessonId } = await params;
@@ -38,7 +39,7 @@ export default async function LessonPage({ params }: LessonPageProps) {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <SiteHeader />
+      <SiteHeader withAuth={false} />
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600">
           <Link href="/courses" className="font-semibold text-orange-600">
