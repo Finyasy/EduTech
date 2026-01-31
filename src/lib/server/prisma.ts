@@ -13,15 +13,38 @@ function isPlaceholderDatabaseUrl(url: string): boolean {
   return url.includes("HOST") || url.includes("USER:PASSWORD");
 }
 
+function normalizeDatabaseUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const sslmode = parsed.searchParams.get("sslmode");
+    const useLibpq = parsed.searchParams.get("uselibpqcompat");
+    if (
+      sslmode &&
+      ["prefer", "require", "verify-ca"].includes(sslmode) &&
+      useLibpq !== "true"
+    ) {
+      // Explicitly preserve current pg-connection-string behavior.
+      parsed.searchParams.set("sslmode", "verify-full");
+      return parsed.toString();
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
 function loadPrisma(): PrismaClient | null {
   if (_client !== null) return _client;
   const url = process.env.DATABASE_URL;
   if (!url || url.trim() === "" || isPlaceholderDatabaseUrl(url)) return null;
   try {
+    const connectionString = normalizeDatabaseUrl(url);
     const pool =
       globalForPrisma.prismaPool ??
       new Pool({
-        connectionString: url,
+        connectionString,
+        connectionTimeoutMillis: 10_000,
+        statement_timeout: 15_000,
       });
     const adapter = new PrismaPg(pool);
     _client =
