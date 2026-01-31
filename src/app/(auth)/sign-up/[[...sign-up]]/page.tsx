@@ -8,9 +8,9 @@ const isClerkConfigured =
   clerkPublishableKey.startsWith("pk_") &&
   !clerkPublishableKey.endsWith("...");
 
-export default function SignUpPage() {
+export default async function SignUpPage() {
   if (isClerkConfigured) {
-    const { userId } = auth();
+    const { userId } = await auth();
     if (userId) {
       redirect("/dashboard");
     }
