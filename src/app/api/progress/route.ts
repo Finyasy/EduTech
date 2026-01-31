@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { ensureUser } from "@/lib/server/auth";
@@ -15,7 +16,7 @@ const progressQuerySchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const { userId } = auth();
+  const { userId } = await auth();
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -40,6 +41,14 @@ export async function GET(request: Request) {
     );
   }
 
+  const prisma = getPrisma();
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 501 },
+    );
+  }
+
   const progress = await prisma.lessonProgress.findUnique({
     where: {
       userId_lessonId: {
@@ -60,7 +69,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { userId } = auth();
+  const { userId } = await auth();
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -107,6 +116,8 @@ export async function POST(request: Request) {
       completedAt: completed ? new Date() : null,
     },
   });
+
+  revalidateTag(`dashboard-stats:${user.id}`);
 
   return NextResponse.json({ ok: true });
 }
