@@ -17,10 +17,10 @@ test("homepage renders and links to courses", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("dashboard landing loads without auth", async ({ page }) => {
+test("dashboard redirects unauthenticated users to sign in", async ({ page }) => {
   await page.goto("/dashboard");
 
   await expect(
-    page.getByRole("heading", { name: /welcome back/i }),
+    page.getByRole("heading", { name: /sign in to edutech/i }),
   ).toBeVisible();
 });
