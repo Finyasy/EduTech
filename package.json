@@ -25,7 +25,7 @@
     "seed": "node --import tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@clerk/nextjs": "^6.36.10",
+    "@clerk/nextjs": "^6.37.1",
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
     "class-variance-authority": "^0.7.1",
