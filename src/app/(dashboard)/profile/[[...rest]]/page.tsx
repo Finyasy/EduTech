@@ -8,7 +8,7 @@ const isClerkConfigured = () => {
   return Boolean(key?.startsWith("pk_") && !key.endsWith("..."));
 };
 
-export default function ProfilePage() {
+export default async function ProfilePage() {
   if (!isClerkConfigured()) {
     return (
       <div className="min-h-screen bg-amber-50">
@@ -23,7 +23,7 @@ export default function ProfilePage() {
     );
   }
 
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) {
     redirect(`/sign-in?redirect_url=${encodeURIComponent("/profile")}`);
   }
