@@ -23,7 +23,7 @@ const normalizeShortAnswer = (value: string) =>
 const normalizeMultipleChoice = (value: string) => value.trim().toLowerCase();
 
 export async function POST(request: Request) {
-  const { userId } = auth();
+  const { userId } = await auth();
 
   const prisma = getPrisma();
   if (!prisma) {
