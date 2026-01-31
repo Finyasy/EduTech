@@ -1,8 +1,21 @@
 import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import SiteHeader from "@/components/shared/SiteHeader";
 import { listGames } from "@/lib/server/data";
 
 export default async function GamesPage() {
+  const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const isClerkConfigured =
+    Boolean(clerkPublishableKey?.startsWith("pk_") && !clerkPublishableKey.endsWith("..."));
+
+  if (isClerkConfigured) {
+    const { userId } = await auth();
+    if (!userId) {
+      redirect(`/sign-in?redirect_url=${encodeURIComponent("/games")}`);
+    }
+  }
+
   const games = await listGames();
 
   return (
