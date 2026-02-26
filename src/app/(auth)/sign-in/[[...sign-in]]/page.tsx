@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { SignIn } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import ClerkAuthCard from "@/components/auth/ClerkAuthCard";
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const isClerkConfigured =
@@ -13,7 +13,7 @@ export default async function SignInPage() {
   if (isClerkConfigured) {
     const { userId } = await auth();
     if (userId) {
-      redirect("/dashboard");
+      redirect("/post-auth");
     }
   }
 
@@ -24,7 +24,7 @@ export default async function SignInPage() {
           <p className="mb-4">Sign-in is not available until Clerk keys are added to .env.</p>
           <Link
             href="/dashboard"
-            className="inline-block rounded-full bg-amber-200 px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-300"
+            className="inline-flex min-h-11 items-center rounded-full bg-amber-200 px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-300"
           >
             Go to dashboard
           </Link>
@@ -35,7 +35,9 @@ export default async function SignInPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-amber-50 px-6">
-      <SignIn />
+      <div className="w-full max-w-md">
+        <ClerkAuthCard mode="sign-in" />
+      </div>
     </div>
   );
 }

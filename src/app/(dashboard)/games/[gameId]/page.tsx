@@ -31,7 +31,7 @@ export default async function GamePage({ params }: GamePageProps) {
   if (data.levels.length === 0) {
     return (
       <div className="min-h-screen bg-amber-50">
-        <SiteHeader />
+        <SiteHeader withAuth={false} />
         <main className="mx-auto w-full max-w-2xl px-6 pb-16 pt-10">
           <Link
             href="/games"
@@ -49,7 +49,7 @@ export default async function GamePage({ params }: GamePageProps) {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <SiteHeader />
+      <SiteHeader withAuth={false} />
       <main className="mx-auto w-full max-w-2xl px-6 pb-16 pt-10">
         <header className="mb-8 space-y-2">
           <Link

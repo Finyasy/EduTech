@@ -1,6 +1,6 @@
-import { SignUp } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import ClerkAuthCard from "@/components/auth/ClerkAuthCard";
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const isClerkConfigured =
@@ -12,7 +12,7 @@ export default async function SignUpPage() {
   if (isClerkConfigured) {
     const { userId } = await auth();
     if (userId) {
-      redirect("/dashboard");
+      redirect("/post-auth");
     }
   }
 
@@ -37,7 +37,9 @@ export default async function SignUpPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-amber-50 px-6">
-      <SignUp />
+      <div className="w-full max-w-md">
+        <ClerkAuthCard mode="sign-up" />
+      </div>
     </div>
   );
 }

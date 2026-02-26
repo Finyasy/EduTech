@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import SiteHeader from "@/components/shared/SiteHeader";
 import { listGames } from "@/lib/server/data";
+import type { GameOverview } from "@/lib/server/data";
 
 export default async function GamesPage() {
   const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
@@ -16,16 +17,22 @@ export default async function GamesPage() {
     }
   }
 
-  const games = await listGames();
+  const games: GameOverview[] = await listGames();
+  const showDelayedDataBadge = games.some((game) => game.isFallbackData);
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <SiteHeader />
+      <SiteHeader withAuth={false} />
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
         <header className="mb-10 space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
             Mini-games
           </p>
+          {showDelayedDataBadge && (
+            <div className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+              Data may be delayed
+            </div>
+          )}
           <h1
             className="text-3xl font-semibold text-slate-900 md:text-4xl"
             style={{ fontFamily: "var(--font-display)" }}

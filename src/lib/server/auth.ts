@@ -1,20 +1,34 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { unstable_cache } from "next/cache";
 import { getPrisma } from "@/lib/server/prisma";
 
-const parseAdminEmails = () =>
-  (process.env.ADMIN_EMAILS ?? "")
+const parseEmailList = (rawList: string) =>
+  rawList
     .split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
 
+const parseAdminEmails = () =>
+  parseEmailList(process.env.ADMIN_EMAILS ?? "");
+
+const parseTeacherEmails = () =>
+  parseEmailList(process.env.TEACHER_EMAILS ?? "");
+
 /**
  * ensureUser with an optional timeout. Use in pages/routes to avoid hanging if Clerk or DB is slow.
  */
-export async function ensureUserWithTimeout(timeoutMs: number) {
+const ensureUserCached = (userId: string) =>
+  unstable_cache(
+    () => ensureUserById(userId),
+    ["user", userId],
+    { revalidate: 60, tags: [`user:${userId}`] },
+  )();
+
+export async function ensureUserByIdWithTimeout(userId: string, timeoutMs: number) {
   try {
     return await Promise.race([
-      ensureUser(),
-      new Promise<Awaited<ReturnType<typeof ensureUser>>>((resolve) =>
+      ensureUserCached(userId),
+      new Promise<Awaited<ReturnType<typeof ensureUserCached>>>((resolve) =>
         setTimeout(() => resolve(null), timeoutMs),
       ),
     ]);
@@ -23,13 +37,21 @@ export async function ensureUserWithTimeout(timeoutMs: number) {
   }
 }
 
-export async function ensureUser() {
+export async function ensureUserWithTimeout(timeoutMs: number) {
   const { userId } = await auth();
 
   if (!userId) {
     return null;
   }
 
+  try {
+    return await ensureUserByIdWithTimeout(userId, timeoutMs);
+  } catch {
+    return null;
+  }
+}
+
+async function ensureUserById(userId: string) {
   if (!process.env.CLERK_SECRET_KEY) {
     return null;
   }
@@ -51,23 +73,39 @@ export async function ensureUser() {
     [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
     null;
 
+  const normalizedEmail = primaryEmail.toLowerCase();
   const adminEmails = parseAdminEmails();
-  const shouldBeAdmin = adminEmails.includes(primaryEmail.toLowerCase());
+  const teacherEmails = parseTeacherEmails();
+  const role = adminEmails.includes(normalizedEmail)
+    ? "ADMIN"
+    : teacherEmails.includes(normalizedEmail)
+      ? "TEACHER"
+      : "STUDENT";
 
   return prisma.user.upsert({
     where: { id: userId },
     update: {
       email: primaryEmail,
       name: displayName,
-      role: shouldBeAdmin ? "ADMIN" : undefined,
+      role,
     },
     create: {
       id: userId,
       email: primaryEmail,
       name: displayName,
-      role: shouldBeAdmin ? "ADMIN" : "STUDENT",
+      role,
     },
   });
+}
+
+export async function ensureUser() {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return null;
+  }
+
+  return ensureUserCached(userId);
 }
 
 export async function requireAdmin() {
@@ -82,6 +120,24 @@ export async function requireAdmin() {
   }
 
   if (user.role !== "ADMIN") {
+    return { ok: false, status: 403 };
+  }
+
+  return { ok: true, user };
+}
+
+export async function requireStaff() {
+  if (!process.env.DATABASE_URL || !getPrisma()) {
+    return { ok: false, status: 501 };
+  }
+
+  const user = await ensureUser();
+
+  if (!user) {
+    return { ok: false, status: 401 };
+  }
+
+  if (user.role !== "ADMIN" && user.role !== "TEACHER") {
     return { ok: false, status: 403 };
   }
 

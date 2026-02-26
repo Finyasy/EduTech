@@ -1,0 +1,154 @@
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import TeacherWorkspaceRouteShell from "@/components/teacher/TeacherWorkspaceRouteShell";
+import type { TeacherWorkspaceSnapshot } from "@/lib/teacher/types";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams("classId=class-1"),
+}));
+
+vi.mock("@/components/teacher/TeacherWorkspaceClient", () => ({
+  default: ({
+    basePath,
+    initialWorkspace,
+  }: {
+    basePath?: string;
+    initialWorkspace: TeacherWorkspaceSnapshot;
+  }) => (
+    <div data-testid="teacher-workspace-client">
+      <span data-testid="base-path">{basePath}</span>
+      <span data-testid="school-name">{initialWorkspace.school.schoolName}</span>
+    </div>
+  ),
+}));
+
+const makeWorkspace = (
+  overrides: Partial<TeacherWorkspaceSnapshot> = {},
+): TeacherWorkspaceSnapshot => ({
+  classes: [],
+  archivedClasses: [],
+  activeClassId: null,
+  subjects: [],
+  strands: [],
+  activities: [],
+  sessionActivityId: null,
+  learners: [],
+  sessionStatuses: {},
+  weeklySummary: { thisWeekMinutes: 0, lastWeekMinutes: 0 },
+  learnerUsage: [],
+  school: {
+    schoolName: "Kwa Njenga",
+    country: "Kenya",
+    schoolQrCode: "QR-123",
+    connectivityStatus: "OKAY",
+    contentStatus: "UP_TO_DATE",
+    appVersion: "1.0.0",
+    deviceId: "lb-test",
+    supportEmail: "support@example.com",
+  },
+  isFallbackData: false,
+  ...overrides,
+});
+
+describe("TeacherWorkspaceRouteShell", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("loads workspace and shows fallback badge when fallback data is returned", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => makeWorkspace({ isFallbackData: true }),
+      }),
+    );
+
+    render(<TeacherWorkspaceRouteShell basePath="/teach" />);
+
+    expect(
+      await screen.findByText(/data may be delayed\. showing fallback classroom data/i),
+    ).toBeInTheDocument();
+    expect(await screen.findByTestId("teacher-workspace-client")).toBeInTheDocument();
+    expect(screen.getByTestId("base-path")).toHaveTextContent("/teach");
+    expect(screen.getByTestId("school-name")).toHaveTextContent("Kwa Njenga");
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/teach/workspace?classId=class-1",
+        expect.objectContaining({ cache: "no-store" }),
+      ),
+    );
+  });
+
+  it("shows retry UI on failure and recovers on retry", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: "Teacher API offline" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => makeWorkspace(),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TeacherWorkspaceRouteShell basePath="/admin/teach" />);
+
+    expect(await screen.findByText("Teacher API offline")).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: /retry/i });
+    await userEvent.click(retry);
+
+    expect(await screen.findByTestId("teacher-workspace-client")).toBeInTheDocument();
+    expect(screen.getByTestId("base-path")).toHaveTextContent("/admin/teach");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows timeout message when workspace fetch is aborted", async () => {
+    vi.useFakeTimers();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            reject(abortError);
+          });
+        });
+      }),
+    );
+
+    render(<TeacherWorkspaceRouteShell basePath="/teach" />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3501);
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText(/teacher workspace is taking too long to load\./i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("falls back to a generic message for non-Error fetch failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue("network-down"),
+    );
+
+    render(<TeacherWorkspaceRouteShell basePath="/teach" />);
+
+    expect(
+      await screen.findByText("Unable to load teacher workspace."),
+    ).toBeInTheDocument();
+  });
+});

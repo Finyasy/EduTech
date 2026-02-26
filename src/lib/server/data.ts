@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/server/prisma";
 import {
   courses as mockCourses,
@@ -18,6 +19,14 @@ export type CourseOverview = {
   gradeLevel: string;
   lessonCount: number;
   firstLessonId: string | null;
+  isFallbackData?: boolean;
+  ageBand?: "5-7" | "8-10" | "11-14";
+  pathwayStage?: "Explorer" | "Builder" | "Creator";
+  aiFocus?: string;
+  codingFocus?: string;
+  mathFocus?: string;
+  missionOutcome?: string;
+  sessionBlueprint?: string;
 };
 
 export type LessonDetail = {
@@ -27,6 +36,7 @@ export type LessonDetail = {
   videoId: string;
   order: number;
   notes: string;
+  isFallbackData?: boolean;
 };
 
 export type QuizQuestionDetail = {
@@ -42,74 +52,283 @@ export type QuizQuestionDetail = {
 const hasDatabase = () =>
   Boolean(process.env.DATABASE_URL && getPrisma());
 
+const PUBLIC_DATA_REVALIDATE_SECONDS = 120;
+const COURSE_QUERY_TIMEOUT_MS = 1_000;
+const GAME_QUERY_TIMEOUT_MS = 800;
+const withUnstableCache = <Args extends unknown[], Result>(
+  fn: (...args: Args) => Promise<Result>,
+  keyParts: string[],
+  options: { revalidate: number; tags?: string[] },
+) => (process.env.NODE_ENV === "test" ? fn : unstable_cache(fn, keyParts, options));
+
+const parseAgeBand = (
+  value: string | null,
+): CourseOverview["ageBand"] => {
+  if (value === "5-7" || value === "8-10" || value === "11-14") {
+    return value;
+  }
+  return undefined;
+};
+
+const parsePathwayStage = (
+  value: string | null,
+): CourseOverview["pathwayStage"] => {
+  if (value === "Explorer" || value === "Builder" || value === "Creator") {
+    return value;
+  }
+  return undefined;
+};
+
+const isCourseMetadataUnavailableError = (error: unknown) => {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2022"
+  ) {
+    return true;
+  }
+
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    return error.message.includes("Unknown field `ageBand`");
+  }
+
+  return false;
+};
+
+const getMockCourseOverviews = (): CourseOverview[] =>
+  mockCourses.map((course) => {
+    const courseLessons = getMockCourseLessons(course.id);
+    return {
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      gradeLevel: course.gradeLevel,
+      lessonCount: courseLessons.length,
+      firstLessonId: courseLessons[0]?.id ?? null,
+      isFallbackData: true,
+      ageBand: course.ageBand,
+      pathwayStage: course.pathwayStage,
+      aiFocus: course.aiFocus,
+      codingFocus: course.codingFocus,
+      mathFocus: course.mathFocus,
+      missionOutcome: course.missionOutcome,
+      sessionBlueprint: course.sessionBlueprint,
+    };
+  });
+
+const getMockCourseByIdWithFallbackFlag = (courseId: string) => {
+  const course = getMockCourse(courseId);
+  return course ? { ...course, isFallbackData: true } : null;
+};
+
+const getMockLessonByIdWithFallbackFlag = (lessonId: string): LessonDetail | null => {
+  const lesson = getMockLesson(lessonId);
+  return lesson ? { ...lesson, isFallbackData: true } : null;
+};
+
+const getMockCourseLessonsWithFallbackFlag = (courseId: string): LessonDetail[] =>
+  getMockCourseLessons(courseId).map((lesson) => ({
+    ...lesson,
+    isFallbackData: true,
+  }));
+
+const withCourseQueryTimeout = async <T,>(
+  promise: Promise<T>,
+): Promise<T | null> =>
+  Promise.race([
+    promise,
+    new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), COURSE_QUERY_TIMEOUT_MS),
+    ),
+  ]);
+
 async function listCoursesUncached(): Promise<CourseOverview[]> {
   if (!hasDatabase()) {
-    return mockCourses.map((course) => {
-      const courseLessons = getMockCourseLessons(course.id);
-      return {
-        ...course,
-        lessonCount: courseLessons.length,
-        firstLessonId: courseLessons[0]?.id ?? null,
-      };
-    });
+    return getMockCourseOverviews();
   }
 
   const prisma = getPrisma()!;
-  const dbCourses = await prisma.course.findMany({
-    where: { isPublished: true },
-    include: {
-      lessons: {
+  try {
+    const dbCourses = await withCourseQueryTimeout(
+      prisma.course.findMany({
         where: { isPublished: true },
-        orderBy: { order: "asc" },
-        select: { id: true },
-      },
-    },
-    orderBy: { title: "asc" },
-  });
-  return dbCourses.map((course) => ({
-    id: course.id,
-    title: course.title,
-    description: course.description,
-    gradeLevel: course.gradeLevel,
-    lessonCount: course.lessons.length,
-    firstLessonId: course.lessons[0]?.id ?? null,
-  }));
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          ageBand: true,
+          pathwayStage: true,
+          aiFocus: true,
+          codingFocus: true,
+          mathFocus: true,
+          missionOutcome: true,
+          sessionBlueprint: true,
+          lessons: {
+            where: { isPublished: true },
+            orderBy: { order: "asc" },
+            select: { id: true },
+          },
+        },
+        orderBy: { title: "asc" },
+      }),
+    );
+    if (!dbCourses) {
+      return getMockCourseOverviews();
+    }
+    return dbCourses.map((course) => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      gradeLevel: course.gradeLevel,
+      lessonCount: course.lessons.length,
+      firstLessonId: course.lessons[0]?.id ?? null,
+      ageBand: parseAgeBand(course.ageBand),
+      pathwayStage: parsePathwayStage(course.pathwayStage),
+      aiFocus: course.aiFocus ?? undefined,
+      codingFocus: course.codingFocus ?? undefined,
+      mathFocus: course.mathFocus ?? undefined,
+      missionOutcome: course.missionOutcome ?? undefined,
+      sessionBlueprint: course.sessionBlueprint ?? undefined,
+    }));
+  } catch (error) {
+    if (!isCourseMetadataUnavailableError(error)) {
+      return getMockCourseOverviews();
+    }
+
+    const legacyCourses = await withCourseQueryTimeout(
+      prisma.course.findMany({
+        where: { isPublished: true },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          lessons: {
+            where: { isPublished: true },
+            orderBy: { order: "asc" },
+            select: { id: true },
+          },
+        },
+        orderBy: { title: "asc" },
+      }),
+    );
+    if (!legacyCourses) {
+      return getMockCourseOverviews();
+    }
+    return legacyCourses.map((course) => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      gradeLevel: course.gradeLevel,
+      lessonCount: course.lessons.length,
+      firstLessonId: course.lessons[0]?.id ?? null,
+      ageBand: undefined,
+      pathwayStage: undefined,
+      aiFocus: undefined,
+      codingFocus: undefined,
+      mathFocus: undefined,
+      missionOutcome: undefined,
+      sessionBlueprint: undefined,
+    }));
+  }
 }
 
 async function getCourseUncached(courseId: string) {
   if (!hasDatabase()) {
-    return getMockCourse(courseId) ?? null;
+    return getMockCourseByIdWithFallbackFlag(courseId);
   }
 
   const prisma = getPrisma()!;
-  return prisma.course.findFirst({
-    where: { id: courseId },
-  });
+  try {
+    const course = await withCourseQueryTimeout(
+      prisma.course.findFirst({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          ageBand: true,
+          pathwayStage: true,
+          aiFocus: true,
+          codingFocus: true,
+          mathFocus: true,
+          missionOutcome: true,
+          sessionBlueprint: true,
+          isPublished: true,
+        },
+      }),
+    );
+    if (!course) {
+      return getMockCourseByIdWithFallbackFlag(courseId);
+    }
+    return course;
+  } catch (error) {
+    if (!isCourseMetadataUnavailableError(error)) {
+      return getMockCourseByIdWithFallbackFlag(courseId);
+    }
+    const course = await withCourseQueryTimeout(
+      prisma.course.findFirst({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          isPublished: true,
+        },
+      }),
+    );
+    if (!course) {
+      return getMockCourseByIdWithFallbackFlag(courseId);
+    }
+    return course;
+  }
 }
 
 async function getLessonUncached(
   lessonId: string,
 ): Promise<LessonDetail | null> {
   if (!hasDatabase()) {
-    return getMockLesson(lessonId) ?? null;
+    return getMockLessonByIdWithFallbackFlag(lessonId);
   }
 
   const prisma = getPrisma()!;
-  return prisma.lesson.findFirst({
-    where: { id: lessonId },
-  });
+  try {
+    const lesson = await withCourseQueryTimeout(
+      prisma.lesson.findFirst({
+        where: { id: lessonId },
+      }),
+    );
+    if (!lesson) {
+      return getMockLessonByIdWithFallbackFlag(lessonId);
+    }
+    return lesson;
+  } catch {
+    return getMockLessonByIdWithFallbackFlag(lessonId);
+  }
 }
 
 async function listLessonsUncached(courseId: string): Promise<LessonDetail[]> {
   if (!hasDatabase()) {
-    return getMockCourseLessons(courseId);
+    return getMockCourseLessonsWithFallbackFlag(courseId);
   }
 
   const prisma = getPrisma()!;
-  return prisma.lesson.findMany({
-    where: { courseId, isPublished: true },
-    orderBy: { order: "asc" },
-  });
+  try {
+    const lessons = await withCourseQueryTimeout(
+      prisma.lesson.findMany({
+        where: { courseId, isPublished: true },
+        orderBy: { order: "asc" },
+      }),
+    );
+    if (!lessons) {
+      return getMockCourseLessonsWithFallbackFlag(courseId);
+    }
+    return lessons;
+  } catch {
+    return getMockCourseLessonsWithFallbackFlag(courseId);
+  }
 }
 
 export type CourseForAdmin = CourseOverview & { isPublished: boolean };
@@ -119,21 +338,80 @@ export async function listCoursesForAdmin(): Promise<CourseForAdmin[]> {
   if (!hasDatabase()) return [];
 
   const prisma = getPrisma()!;
-  const dbCourses = await prisma.course.findMany({
-    include: {
-      lessons: { orderBy: { order: "asc" }, select: { id: true, isPublished: true } },
-    },
-    orderBy: { title: "asc" },
-  });
-  return dbCourses.map((course) => ({
-    id: course.id,
-    title: course.title,
-    description: course.description,
-    gradeLevel: course.gradeLevel,
-    lessonCount: course.lessons.length,
-    firstLessonId: course.lessons[0]?.id ?? null,
-    isPublished: course.isPublished,
-  }));
+  try {
+    const dbCourses = await prisma.course.findMany({
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        gradeLevel: true,
+        ageBand: true,
+        pathwayStage: true,
+        aiFocus: true,
+        codingFocus: true,
+        mathFocus: true,
+        missionOutcome: true,
+        sessionBlueprint: true,
+        isPublished: true,
+        lessons: {
+          orderBy: { order: "asc" },
+          select: { id: true, isPublished: true },
+        },
+      },
+      orderBy: { title: "asc" },
+    });
+    return dbCourses.map((course) => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      gradeLevel: course.gradeLevel,
+      lessonCount: course.lessons.length,
+      firstLessonId: course.lessons[0]?.id ?? null,
+      ageBand: parseAgeBand(course.ageBand),
+      pathwayStage: parsePathwayStage(course.pathwayStage),
+      aiFocus: course.aiFocus ?? undefined,
+      codingFocus: course.codingFocus ?? undefined,
+      mathFocus: course.mathFocus ?? undefined,
+      missionOutcome: course.missionOutcome ?? undefined,
+      sessionBlueprint: course.sessionBlueprint ?? undefined,
+      isPublished: course.isPublished,
+    }));
+  } catch (error) {
+    if (!isCourseMetadataUnavailableError(error)) {
+      throw error;
+    }
+
+    const legacyCourses = await prisma.course.findMany({
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        gradeLevel: true,
+        isPublished: true,
+        lessons: {
+          orderBy: { order: "asc" },
+          select: { id: true, isPublished: true },
+        },
+      },
+      orderBy: { title: "asc" },
+    });
+    return legacyCourses.map((course) => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      gradeLevel: course.gradeLevel,
+      lessonCount: course.lessons.length,
+      firstLessonId: course.lessons[0]?.id ?? null,
+      ageBand: undefined,
+      pathwayStage: undefined,
+      aiFocus: undefined,
+      codingFocus: undefined,
+      mathFocus: undefined,
+      missionOutcome: undefined,
+      sessionBlueprint: undefined,
+      isPublished: course.isPublished,
+    }));
+  }
 }
 
 export async function getCourseForAdmin(
@@ -142,10 +420,57 @@ export async function getCourseForAdmin(
   if (!hasDatabase()) return null;
 
   const prisma = getPrisma()!;
-  const course = await prisma.course.findUnique({
-    where: { id: courseId },
-    include: { lessons: { select: { id: true } } },
-  });
+  let course: {
+    id: string;
+    title: string;
+    description: string;
+    gradeLevel: string;
+    ageBand?: string | null;
+    pathwayStage?: string | null;
+    aiFocus?: string | null;
+    codingFocus?: string | null;
+    mathFocus?: string | null;
+    missionOutcome?: string | null;
+    sessionBlueprint?: string | null;
+    isPublished: boolean;
+    lessons: { id: string }[];
+  } | null = null;
+
+  try {
+    course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        gradeLevel: true,
+        ageBand: true,
+        pathwayStage: true,
+        aiFocus: true,
+        codingFocus: true,
+        mathFocus: true,
+        missionOutcome: true,
+        sessionBlueprint: true,
+        isPublished: true,
+        lessons: { select: { id: true } },
+      },
+    });
+  } catch (error) {
+    if (!isCourseMetadataUnavailableError(error)) {
+      throw error;
+    }
+    course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        gradeLevel: true,
+        isPublished: true,
+        lessons: { select: { id: true } },
+      },
+    });
+  }
   if (!course) return null;
 
   return {
@@ -155,6 +480,13 @@ export async function getCourseForAdmin(
     gradeLevel: course.gradeLevel,
     lessonCount: course.lessons.length,
     firstLessonId: course.lessons[0]?.id ?? null,
+    ageBand: parseAgeBand(course.ageBand ?? null),
+    pathwayStage: parsePathwayStage(course.pathwayStage ?? null),
+    aiFocus: course.aiFocus ?? undefined,
+    codingFocus: course.codingFocus ?? undefined,
+    mathFocus: course.mathFocus ?? undefined,
+    missionOutcome: course.missionOutcome ?? undefined,
+    sessionBlueprint: course.sessionBlueprint ?? undefined,
     isPublished: course.isPublished,
   };
 }
@@ -207,6 +539,7 @@ export type GameOverview = {
   title: string;
   description: string;
   levelCount: number;
+  isFallbackData?: boolean;
 };
 
 export type GameLevelConfig = {
@@ -216,30 +549,70 @@ export type GameLevelConfig = {
   configJson: { prompt: string; choices: string[]; answer: string };
 };
 
-async function listGamesUncached(): Promise<GameOverview[]> {
-  if (!hasDatabase()) {
-    return mockGames.map((game) => ({
-      id: game.id,
-      title: game.title,
-      description: game.description,
-      levelCount: game.levelCount,
-    }));
-  }
-
-  const prisma = getPrisma()!;
-  const dbGames = await prisma.game.findMany({
-    where: { isPublished: true },
-    include: {
-      levels: { orderBy: { levelNumber: "asc" }, select: { id: true } },
-    },
-    orderBy: { title: "asc" },
-  });
-  return dbGames.map((game) => ({
+const getMockGameOverviews = (): GameOverview[] =>
+  mockGames.map((game) => ({
     id: game.id,
     title: game.title,
     description: game.description,
-    levelCount: game.levels.length,
+    levelCount: game.levelCount,
+    isFallbackData: true,
   }));
+
+const getMockGameWithLevels = (
+  gameId: string,
+): { game: { id: string; title: string; description: string }; levels: GameLevelConfig[] } | null => {
+  const game = getMockGame(gameId);
+  const levels = getMockGameLevels(gameId);
+  if (!game) return null;
+  return {
+    game: { id: game.id, title: game.title, description: game.description },
+    levels: levels.map((l) => ({
+      id: l.id,
+      gameId: l.gameId,
+      levelNumber: l.levelNumber,
+      configJson: l.configJson,
+    })),
+  };
+};
+
+const withGameQueryTimeout = async <T,>(
+  promise: Promise<T>,
+): Promise<T | null> =>
+  Promise.race([
+    promise,
+    new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), GAME_QUERY_TIMEOUT_MS),
+    ),
+  ]);
+
+async function listGamesUncached(): Promise<GameOverview[]> {
+  if (!hasDatabase()) {
+    return getMockGameOverviews();
+  }
+
+  const prisma = getPrisma()!;
+  try {
+    const dbGames = await withGameQueryTimeout(
+      prisma.game.findMany({
+        where: { isPublished: true },
+        include: {
+          levels: { orderBy: { levelNumber: "asc" }, select: { id: true } },
+        },
+        orderBy: { title: "asc" },
+      }),
+    );
+    if (!dbGames) {
+      return getMockGameOverviews();
+    }
+    return dbGames.map((game) => ({
+      id: game.id,
+      title: game.title,
+      description: game.description,
+      levelCount: game.levels.length,
+    }));
+  } catch {
+    return getMockGameOverviews();
+  }
 }
 
 async function getGameUncached(gameId: string) {
@@ -248,65 +621,131 @@ async function getGameUncached(gameId: string) {
   }
 
   const prisma = getPrisma()!;
-  return prisma.game.findFirst({
-    where: { id: gameId },
-  });
+  try {
+    const game = await withGameQueryTimeout(
+      prisma.game.findFirst({
+        where: { id: gameId },
+      }),
+    );
+    if (!game) {
+      return getMockGame(gameId) ?? null;
+    }
+    return game;
+  } catch {
+    return getMockGame(gameId) ?? null;
+  }
 }
 
 async function getGameWithLevelsUncached(
   gameId: string,
 ): Promise<{ game: { id: string; title: string; description: string }; levels: GameLevelConfig[] } | null> {
   if (!hasDatabase()) {
-    const game = getMockGame(gameId);
-    const levels = getMockGameLevels(gameId);
-    if (!game) return null;
-    return {
-      game: { id: game.id, title: game.title, description: game.description },
-      levels: levels.map((l) => ({
-        id: l.id,
-        gameId: l.gameId,
-        levelNumber: l.levelNumber,
-        configJson: l.configJson,
-      })),
-    };
+    return getMockGameWithLevels(gameId);
   }
 
   const prisma = getPrisma()!;
-  const game = await prisma.game.findFirst({
-    where: { id: gameId },
-    include: {
-      levels: { orderBy: { levelNumber: "asc" } },
-    },
-  });
-  if (!game) return null;
+  try {
+    const game = await withGameQueryTimeout(
+      prisma.game.findFirst({
+        where: { id: gameId },
+        include: {
+          levels: { orderBy: { levelNumber: "asc" } },
+        },
+      }),
+    );
+    if (!game) return getMockGameWithLevels(gameId);
 
-  const levels: GameLevelConfig[] = game.levels.map((level) => {
-    const config = level.configJson as { prompt?: string; choices?: string[]; answer?: string };
+    const levels: GameLevelConfig[] = game.levels.map((level) => {
+      const config = level.configJson as { prompt?: string; choices?: string[]; answer?: string };
+      return {
+        id: level.id,
+        gameId: level.gameId,
+        levelNumber: level.levelNumber,
+        configJson: {
+          prompt: config?.prompt ?? "Choose the correct answer.",
+          choices: Array.isArray(config?.choices) ? config.choices : [],
+          answer: config?.answer ?? "",
+        },
+      };
+    });
+
     return {
-      id: level.id,
-      gameId: level.gameId,
-      levelNumber: level.levelNumber,
-      configJson: {
-        prompt: config?.prompt ?? "Choose the correct answer.",
-        choices: Array.isArray(config?.choices) ? config.choices : [],
-        answer: config?.answer ?? "",
-      },
+      game: { id: game.id, title: game.title, description: game.description },
+      levels,
     };
-  });
-
-  return {
-    game: { id: game.id, title: game.title, description: game.description },
-    levels,
-  };
+  } catch {
+    return getMockGameWithLevels(gameId);
+  }
 }
 
-export const listCourses = cache(listCoursesUncached);
-export const getCourse = cache(getCourseUncached);
-export const getLesson = cache(getLessonUncached);
-export const listLessons = cache(listLessonsUncached);
-export const listGames = cache(listGamesUncached);
-export const getGame = cache(getGameUncached);
-export const getGameWithLevels = cache(getGameWithLevelsUncached);
+const listCoursesCached = withUnstableCache(
+  listCoursesUncached,
+  ["courses"],
+  { revalidate: PUBLIC_DATA_REVALIDATE_SECONDS, tags: ["courses"] },
+);
+export const listCourses = cache(listCoursesCached);
+
+export const getCourse = cache((courseId: string) =>
+  withUnstableCache(
+    () => getCourseUncached(courseId),
+    ["course", courseId],
+    {
+      revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
+      tags: ["courses", `course:${courseId}`],
+    },
+  )(),
+);
+
+export const getLesson = cache((lessonId: string) =>
+  withUnstableCache(
+    () => getLessonUncached(lessonId),
+    ["lesson", lessonId],
+    {
+      revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
+      tags: ["lessons", `lesson:${lessonId}`],
+    },
+  )(),
+);
+
+export const listLessons = cache((courseId: string) =>
+  withUnstableCache(
+    () => listLessonsUncached(courseId),
+    ["lessons", courseId],
+    {
+      revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
+      tags: ["lessons", `lessons:${courseId}`, `course:${courseId}`],
+    },
+  )(),
+);
+
+const listGamesCached = withUnstableCache(
+  listGamesUncached,
+  ["games"],
+  { revalidate: PUBLIC_DATA_REVALIDATE_SECONDS, tags: ["games"] },
+);
+export const listGames = cache(listGamesCached);
+
+export const getGame = cache((gameId: string) =>
+  withUnstableCache(
+    () => getGameUncached(gameId),
+    ["game", gameId],
+    {
+      revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
+      tags: ["games", `game:${gameId}`],
+    },
+  )(),
+);
+
+export const getGameWithLevels = cache((gameId: string) =>
+  withUnstableCache(
+    () => getGameWithLevelsUncached(gameId),
+    ["game-with-levels", gameId],
+    {
+      revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
+      tags: ["games", `game:${gameId}`],
+    },
+  )(),
+);
 
 export type ContinueWatchingItem = {
   lessonId: string;
@@ -322,6 +761,7 @@ export type DashboardStats = {
   completedTotal: number;
   completedThisWeek: number;
   streakDays: number;
+  isFallbackData?: boolean;
 };
 
 async function getDashboardStatsUncached(
@@ -336,6 +776,7 @@ async function getDashboardStatsUncached(
       completedTotal: 0,
       completedThisWeek: 0,
       streakDays: 0,
+      isFallbackData: true,
     };
   }
 
@@ -410,11 +851,18 @@ async function getDashboardStatsUncached(
   let streakDays = 0;
   if (sortedDates.length > 0) {
     const mostRecent = sortedDates[0];
-    const check = new Date(mostRecent + "T00:00:00.000Z");
-    const completionDateSet = new Set(sortedDates);
-    while (completionDateSet.has(check.toISOString().slice(0, 10))) {
-      streakDays++;
-      check.setUTCDate(check.getUTCDate() - 1);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterdayKey = yesterday.toISOString().slice(0, 10);
+
+    if (mostRecent === todayKey || mostRecent === yesterdayKey) {
+      const check = new Date(mostRecent + "T00:00:00.000Z");
+      const completionDateSet = new Set(sortedDates);
+      while (completionDateSet.has(check.toISOString().slice(0, 10))) {
+        streakDays++;
+        check.setUTCDate(check.getUTCDate() - 1);
+      }
     }
   }
 
