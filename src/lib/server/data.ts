@@ -1,6 +1,11 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { Prisma } from "@prisma/client";
+import {
+  clearScopeDegraded,
+  isScopeDegraded,
+  markScopeDegraded,
+} from "@/lib/server/degraded-mode";
 import { getPrisma } from "@/lib/server/prisma";
 import {
   courses as mockCourses,
@@ -55,11 +60,32 @@ const hasDatabase = () =>
 const PUBLIC_DATA_REVALIDATE_SECONDS = 120;
 const COURSE_QUERY_TIMEOUT_MS = 1_000;
 const GAME_QUERY_TIMEOUT_MS = 800;
+const COURSES_DEGRADED_SCOPE = "courses-public";
+const GAMES_DEGRADED_SCOPE = "games-public";
+const DASHBOARD_DEGRADED_SCOPE = "dashboard-stats";
 const withUnstableCache = <Args extends unknown[], Result>(
   fn: (...args: Args) => Promise<Result>,
   keyParts: string[],
   options: { revalidate: number; tags?: string[] },
 ) => (process.env.NODE_ENV === "test" ? fn : unstable_cache(fn, keyParts, options));
+
+const degradedModeEnabled = () => process.env.NODE_ENV !== "test";
+
+const isDegraded = (scope: string) =>
+  degradedModeEnabled() && isScopeDegraded(scope);
+
+const markDegraded = (scope: string, error: unknown) => {
+  if (!degradedModeEnabled()) return;
+  markScopeDegraded(
+    scope,
+    error instanceof Error ? error.message : String(error ?? "db-degraded"),
+  );
+};
+
+const clearDegraded = (scope: string) => {
+  if (!degradedModeEnabled()) return;
+  clearScopeDegraded(scope);
+};
 
 const parseAgeBand = (
   value: string | null,
@@ -145,6 +171,9 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
   if (!hasDatabase()) {
     return getMockCourseOverviews();
   }
+  if (isDegraded(COURSES_DEGRADED_SCOPE)) {
+    return getMockCourseOverviews();
+  }
 
   const prisma = getPrisma()!;
   try {
@@ -173,8 +202,10 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
       }),
     );
     if (!dbCourses) {
+      markDegraded(COURSES_DEGRADED_SCOPE, "courses-query-timeout");
       return getMockCourseOverviews();
     }
+    clearDegraded(COURSES_DEGRADED_SCOPE);
     return dbCourses.map((course) => ({
       id: course.id,
       title: course.title,
@@ -192,6 +223,7 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
     }));
   } catch (error) {
     if (!isCourseMetadataUnavailableError(error)) {
+      markDegraded(COURSES_DEGRADED_SCOPE, error);
       return getMockCourseOverviews();
     }
 
@@ -213,8 +245,10 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
       }),
     );
     if (!legacyCourses) {
+      markDegraded(COURSES_DEGRADED_SCOPE, "courses-legacy-query-timeout");
       return getMockCourseOverviews();
     }
+    clearDegraded(COURSES_DEGRADED_SCOPE);
     return legacyCourses.map((course) => ({
       id: course.id,
       title: course.title,
@@ -235,6 +269,9 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
 
 async function getCourseUncached(courseId: string) {
   if (!hasDatabase()) {
+    return getMockCourseByIdWithFallbackFlag(courseId);
+  }
+  if (isDegraded(COURSES_DEGRADED_SCOPE)) {
     return getMockCourseByIdWithFallbackFlag(courseId);
   }
 
@@ -262,9 +299,11 @@ async function getCourseUncached(courseId: string) {
     if (!course) {
       return getMockCourseByIdWithFallbackFlag(courseId);
     }
+    clearDegraded(COURSES_DEGRADED_SCOPE);
     return course;
   } catch (error) {
     if (!isCourseMetadataUnavailableError(error)) {
+      markDegraded(COURSES_DEGRADED_SCOPE, error);
       return getMockCourseByIdWithFallbackFlag(courseId);
     }
     const course = await withCourseQueryTimeout(
@@ -282,6 +321,7 @@ async function getCourseUncached(courseId: string) {
     if (!course) {
       return getMockCourseByIdWithFallbackFlag(courseId);
     }
+    clearDegraded(COURSES_DEGRADED_SCOPE);
     return course;
   }
 }
@@ -290,6 +330,9 @@ async function getLessonUncached(
   lessonId: string,
 ): Promise<LessonDetail | null> {
   if (!hasDatabase()) {
+    return getMockLessonByIdWithFallbackFlag(lessonId);
+  }
+  if (isDegraded(COURSES_DEGRADED_SCOPE)) {
     return getMockLessonByIdWithFallbackFlag(lessonId);
   }
 
@@ -303,14 +346,19 @@ async function getLessonUncached(
     if (!lesson) {
       return getMockLessonByIdWithFallbackFlag(lessonId);
     }
+    clearDegraded(COURSES_DEGRADED_SCOPE);
     return lesson;
-  } catch {
+  } catch (error) {
+    markDegraded(COURSES_DEGRADED_SCOPE, error);
     return getMockLessonByIdWithFallbackFlag(lessonId);
   }
 }
 
 async function listLessonsUncached(courseId: string): Promise<LessonDetail[]> {
   if (!hasDatabase()) {
+    return getMockCourseLessonsWithFallbackFlag(courseId);
+  }
+  if (isDegraded(COURSES_DEGRADED_SCOPE)) {
     return getMockCourseLessonsWithFallbackFlag(courseId);
   }
 
@@ -323,10 +371,13 @@ async function listLessonsUncached(courseId: string): Promise<LessonDetail[]> {
       }),
     );
     if (!lessons) {
+      markDegraded(COURSES_DEGRADED_SCOPE, "lessons-query-timeout");
       return getMockCourseLessonsWithFallbackFlag(courseId);
     }
+    clearDegraded(COURSES_DEGRADED_SCOPE);
     return lessons;
-  } catch {
+  } catch (error) {
+    markDegraded(COURSES_DEGRADED_SCOPE, error);
     return getMockCourseLessonsWithFallbackFlag(courseId);
   }
 }
@@ -589,6 +640,9 @@ async function listGamesUncached(): Promise<GameOverview[]> {
   if (!hasDatabase()) {
     return getMockGameOverviews();
   }
+  if (isDegraded(GAMES_DEGRADED_SCOPE)) {
+    return getMockGameOverviews();
+  }
 
   const prisma = getPrisma()!;
   try {
@@ -602,21 +656,27 @@ async function listGamesUncached(): Promise<GameOverview[]> {
       }),
     );
     if (!dbGames) {
+      markDegraded(GAMES_DEGRADED_SCOPE, "games-query-timeout");
       return getMockGameOverviews();
     }
+    clearDegraded(GAMES_DEGRADED_SCOPE);
     return dbGames.map((game) => ({
       id: game.id,
       title: game.title,
       description: game.description,
       levelCount: game.levels.length,
     }));
-  } catch {
+  } catch (error) {
+    markDegraded(GAMES_DEGRADED_SCOPE, error);
     return getMockGameOverviews();
   }
 }
 
 async function getGameUncached(gameId: string) {
   if (!hasDatabase()) {
+    return getMockGame(gameId) ?? null;
+  }
+  if (isDegraded(GAMES_DEGRADED_SCOPE)) {
     return getMockGame(gameId) ?? null;
   }
 
@@ -630,8 +690,10 @@ async function getGameUncached(gameId: string) {
     if (!game) {
       return getMockGame(gameId) ?? null;
     }
+    clearDegraded(GAMES_DEGRADED_SCOPE);
     return game;
-  } catch {
+  } catch (error) {
+    markDegraded(GAMES_DEGRADED_SCOPE, error);
     return getMockGame(gameId) ?? null;
   }
 }
@@ -640,6 +702,9 @@ async function getGameWithLevelsUncached(
   gameId: string,
 ): Promise<{ game: { id: string; title: string; description: string }; levels: GameLevelConfig[] } | null> {
   if (!hasDatabase()) {
+    return getMockGameWithLevels(gameId);
+  }
+  if (isDegraded(GAMES_DEGRADED_SCOPE)) {
     return getMockGameWithLevels(gameId);
   }
 
@@ -669,11 +734,13 @@ async function getGameWithLevelsUncached(
       };
     });
 
+    clearDegraded(GAMES_DEGRADED_SCOPE);
     return {
       game: { id: game.id, title: game.title, description: game.description },
       levels,
     };
-  } catch {
+  } catch (error) {
+    markDegraded(GAMES_DEGRADED_SCOPE, error);
     return getMockGameWithLevels(gameId);
   }
 }
@@ -764,6 +831,14 @@ export type DashboardStats = {
   isFallbackData?: boolean;
 };
 
+const fallbackDashboardStats = (): DashboardStats => ({
+  continueWatching: null,
+  completedTotal: 0,
+  completedThisWeek: 0,
+  streakDays: 0,
+  isFallbackData: true,
+});
+
 async function getDashboardStatsUncached(
   userId: string,
 ): Promise<DashboardStats> {
@@ -771,107 +846,111 @@ async function getDashboardStatsUncached(
     console.log(`[cache-miss] getDashboardStats user=${userId}`);
   }
   if (!hasDatabase()) {
-    return {
-      continueWatching: null,
-      completedTotal: 0,
-      completedThisWeek: 0,
-      streakDays: 0,
-      isFallbackData: true,
-    };
+    return fallbackDashboardStats();
+  }
+
+  if (isDegraded(DASHBOARD_DEGRADED_SCOPE)) {
+    return fallbackDashboardStats();
   }
 
   const prisma = getPrisma()!;
+  try {
+    // Continue watching: most recent progress not yet completed (no completedAt or watchPercent < 100)
+    const inProgress = await prisma.lessonProgress.findFirst({
+      where: {
+        userId,
+        OR: [
+          { completedAt: null },
+          { watchPercent: { lt: 100 } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        lesson: { include: { course: true } },
+      },
+    });
 
-  // Continue watching: most recent progress not yet completed (no completedAt or watchPercent < 100)
-  const inProgress = await prisma.lessonProgress.findFirst({
-    where: {
-      userId,
-      OR: [
-        { completedAt: null },
-        { watchPercent: { lt: 100 } },
-      ],
-    },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      lesson: { include: { course: true } },
-    },
-  });
+    const continueWatching: ContinueWatchingItem | null = inProgress
+      ? {
+          lessonId: inProgress.lesson.id,
+          courseId: inProgress.lesson.courseId,
+          lessonTitle: inProgress.lesson.title,
+          courseTitle: inProgress.lesson.course.title,
+          watchPercent: inProgress.watchPercent,
+          href: `/courses/${inProgress.lesson.courseId}/lessons/${inProgress.lesson.id}`,
+        }
+      : null;
 
-  const continueWatching: ContinueWatchingItem | null = inProgress
-    ? {
-        lessonId: inProgress.lesson.id,
-        courseId: inProgress.lesson.courseId,
-        lessonTitle: inProgress.lesson.title,
-        courseTitle: inProgress.lesson.course.title,
-        watchPercent: inProgress.watchPercent,
-        href: `/courses/${inProgress.lesson.courseId}/lessons/${inProgress.lesson.id}`,
+    // Completed: total and this week (Monday–today)
+    const now = new Date();
+    const day = now.getDay();
+    const mondayOffset = day === 0 ? 6 : day - 1;
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - mondayOffset);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const counts = await prisma.$queryRaw<{ total: bigint; week: bigint }[]>`
+      SELECT
+        COUNT(*) FILTER (WHERE "completedAt" IS NOT NULL) AS total,
+        COUNT(*) FILTER (WHERE "completedAt" >= ${startOfWeek}) AS week
+      FROM "LessonProgress"
+      WHERE "userId" = ${userId};
+    `;
+
+    const completedTotal = Number(counts?.[0]?.total ?? 0);
+    const completedThisWeek = Number(counts?.[0]?.week ?? 0);
+
+    if (completedTotal === 0) {
+      clearDegraded(DASHBOARD_DEGRADED_SCOPE);
+      return {
+        continueWatching,
+        completedTotal,
+        completedThisWeek,
+        streakDays: 0,
+      };
+    }
+
+    const completionDates = await prisma.$queryRaw<{ date: Date }[]>`
+      SELECT DISTINCT DATE("completedAt") AS date
+      FROM "LessonProgress"
+      WHERE "userId" = ${userId}
+        AND "completedAt" IS NOT NULL
+      ORDER BY date DESC;
+    `;
+
+    const sortedDates = completionDates
+      .map((row) => row.date.toISOString().slice(0, 10))
+      .filter(Boolean);
+
+    let streakDays = 0;
+    if (sortedDates.length > 0) {
+      const mostRecent = sortedDates[0];
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date();
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      const yesterdayKey = yesterday.toISOString().slice(0, 10);
+
+      if (mostRecent === todayKey || mostRecent === yesterdayKey) {
+        const check = new Date(mostRecent + "T00:00:00.000Z");
+        const completionDateSet = new Set(sortedDates);
+        while (completionDateSet.has(check.toISOString().slice(0, 10))) {
+          streakDays++;
+          check.setUTCDate(check.getUTCDate() - 1);
+        }
       }
-    : null;
+    }
 
-  // Completed: total and this week (Monday–today)
-  const now = new Date();
-  const day = now.getDay();
-  const mondayOffset = day === 0 ? 6 : day - 1;
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - mondayOffset);
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  const counts = await prisma.$queryRaw<{ total: bigint; week: bigint }[]>`
-    SELECT
-      COUNT(*) FILTER (WHERE "completedAt" IS NOT NULL) AS total,
-      COUNT(*) FILTER (WHERE "completedAt" >= ${startOfWeek}) AS week
-    FROM "LessonProgress"
-    WHERE "userId" = ${userId};
-  `;
-
-  const completedTotal = Number(counts?.[0]?.total ?? 0);
-  const completedThisWeek = Number(counts?.[0]?.week ?? 0);
-
-  if (completedTotal === 0) {
+    clearDegraded(DASHBOARD_DEGRADED_SCOPE);
     return {
       continueWatching,
       completedTotal,
       completedThisWeek,
-      streakDays: 0,
+      streakDays,
     };
+  } catch (error) {
+    markDegraded(DASHBOARD_DEGRADED_SCOPE, error);
+    return fallbackDashboardStats();
   }
-
-  const completionDates = await prisma.$queryRaw<{ date: Date }[]>`
-    SELECT DISTINCT DATE("completedAt") AS date
-    FROM "LessonProgress"
-    WHERE "userId" = ${userId}
-      AND "completedAt" IS NOT NULL
-    ORDER BY date DESC;
-  `;
-
-  const sortedDates = completionDates
-    .map((row) => row.date.toISOString().slice(0, 10))
-    .filter(Boolean);
-
-  let streakDays = 0;
-  if (sortedDates.length > 0) {
-    const mostRecent = sortedDates[0];
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date();
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-    const yesterdayKey = yesterday.toISOString().slice(0, 10);
-
-    if (mostRecent === todayKey || mostRecent === yesterdayKey) {
-      const check = new Date(mostRecent + "T00:00:00.000Z");
-      const completionDateSet = new Set(sortedDates);
-      while (completionDateSet.has(check.toISOString().slice(0, 10))) {
-        streakDays++;
-        check.setUTCDate(check.getUTCDate() - 1);
-      }
-    }
-  }
-
-  return {
-    continueWatching,
-    completedTotal,
-    completedThisWeek,
-    streakDays,
-  };
 }
 
 export const getDashboardStats = (userId: string) =>

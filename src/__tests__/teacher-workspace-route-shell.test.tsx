@@ -37,6 +37,14 @@ const makeWorkspace = (
   sessionStatuses: {},
   weeklySummary: { thisWeekMinutes: 0, lastWeekMinutes: 0 },
   learnerUsage: [],
+  assignments: [],
+  assignmentAnalytics: {
+    totalAssignments: 0,
+    recentAssignments24h: 0,
+    assignedClassCount: 0,
+    byTarget: { CLASS: 0, NEEDS_PRACTICE: 0 },
+    byStatus: { ASSIGNED: 0, IN_PROGRESS: 0, COMPLETED: 0 },
+  },
   school: {
     schoolName: "Kwa Njenga",
     country: "Kenya",

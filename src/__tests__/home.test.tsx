@@ -20,12 +20,12 @@ describe("HomePage", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: /help kids master math and logic/i,
+        name: /build the future with ai, code, and mathematics/i,
       }),
     ).toBeInTheDocument();
 
     expect(
-      screen.getByRole("link", { name: /explore courses/i }),
+      screen.getByRole("link", { name: /choose a mission/i }),
     ).toHaveAttribute("href", "/courses");
   });
 });

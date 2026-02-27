@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { ensureUser } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
+import { parseJsonBody } from "@/lib/server/request";
 
 const progressSchema = z.object({
   lessonId: z.string().min(1),
@@ -75,7 +76,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = progressSchema.safeParse(await request.json());
+  const parsedBody = await parseJsonBody<unknown>(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const payload = progressSchema.safeParse(parsedBody.data);
   if (!payload.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: payload.error.flatten() },
@@ -92,6 +98,8 @@ export async function POST(request: Request) {
   }
 
   const { lessonId, watchPercent, completed } = payload.data;
+  const completedAt =
+    completed === undefined ? undefined : completed ? new Date() : null;
 
   const user = await ensureUser();
   if (!user) {
@@ -107,7 +115,7 @@ export async function POST(request: Request) {
     },
     update: {
       watchPercent,
-      completedAt: completed ? new Date() : null,
+      completedAt,
     },
     create: {
       userId,
@@ -117,7 +125,7 @@ export async function POST(request: Request) {
     },
   });
 
-  revalidateTag(`dashboard-stats:${user.id}`);
+  revalidateTag(`dashboard-stats:${user.id}`, { expire: 0 });
 
   return NextResponse.json({ ok: true });
 }

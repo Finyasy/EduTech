@@ -13,7 +13,7 @@ type AnswerState = Record<string, string>;
 type QuestionResult = {
   questionId: string;
   correct: boolean;
-  correctAnswer: string;
+  correctAnswer: string | null;
   explanation: string | null;
 };
 
@@ -167,11 +167,13 @@ export default function QuizForm({ lessonId, questions }: QuizFormProps) {
                 placeholder="Type your answer"
               />
             )}
-            {showFeedback && !isCorrect && (
+            {showFeedback && !isCorrect && (qResult.correctAnswer || qResult.explanation) && (
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
-                <p className="font-semibold">
-                  Correct answer: {displayOption(qResult.correctAnswer)}
-                </p>
+                {qResult.correctAnswer && (
+                  <p className="font-semibold">
+                    Correct answer: {displayOption(qResult.correctAnswer)}
+                  </p>
+                )}
                 {qResult.explanation && (
                   <p className="mt-2 text-amber-800">{qResult.explanation}</p>
                 )}

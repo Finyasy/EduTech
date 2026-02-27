@@ -55,7 +55,17 @@ export default function TeacherWorkspaceRouteShell({
       }
 
       const data = (await response.json()) as TeacherWorkspaceSnapshot;
-      setWorkspace(data);
+      setWorkspace({
+        ...data,
+        assignments: Array.isArray(data.assignments) ? data.assignments : [],
+        assignmentAnalytics: data.assignmentAnalytics ?? {
+          totalAssignments: 0,
+          recentAssignments24h: 0,
+          assignedClassCount: 0,
+          byTarget: { CLASS: 0, NEEDS_PRACTICE: 0 },
+          byStatus: { ASSIGNED: 0, IN_PROGRESS: 0, COMPLETED: 0 },
+        },
+      });
     } catch (cause) {
       const message =
         cause instanceof Error && cause.name === "AbortError"

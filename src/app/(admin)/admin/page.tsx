@@ -89,6 +89,49 @@ export default async function AdminPage() {
           )}
         </header>
 
+        <section className="mb-10 grid gap-4 md:grid-cols-2">
+          <div className="rounded-3xl border border-white/70 bg-white/90 p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Staff tools
+            </p>
+            <h2
+              className="mt-2 text-2xl font-semibold text-slate-900"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Teacher workspace
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Plan classes, track learners, and review progress snapshots.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+              <Link
+                href="/admin/teach"
+                className="rounded-full bg-slate-900 px-4 py-2 text-white"
+              >
+                Open workspace
+              </Link>
+              <Link
+                href="/admin/teach/learners"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-700"
+              >
+                Learners
+              </Link>
+              <Link
+                href="/admin/teach/progress"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-700"
+              >
+                Progress
+              </Link>
+              <Link
+                href="/admin/teach/settings"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-700"
+              >
+                Settings
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {!hasDatabase && (
           <div className="mb-8 rounded-3xl border border-orange-200 bg-orange-50 p-5 text-sm text-orange-800">
             Database not configured. Connect Supabase to enable CRUD actions.
@@ -120,6 +163,24 @@ export default async function AdminPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     {course.gradeLevel} · {lessons.length} lessons
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                    {course.ageBand && (
+                      <span className="rounded-full bg-lime-100 px-2 py-0.5 text-lime-800">
+                        Ages {course.ageBand}
+                      </span>
+                    )}
+                    {course.pathwayStage && (
+                      <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-cyan-800">
+                        {course.pathwayStage}
+                      </span>
+                    )}
+                  </div>
+                  {(course.aiFocus || course.codingFocus || course.mathFocus) && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      AI: {course.aiFocus ?? "Not set"} · Code: {course.codingFocus ?? "Not set"} · Math:{" "}
+                      {course.mathFocus ?? "Not set"}
+                    </p>
+                  )}
                 </div>
                 {hasDatabase && (
                   <div className="flex flex-wrap items-center gap-2">

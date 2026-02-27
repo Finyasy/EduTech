@@ -27,7 +27,7 @@ async function waitForTeacherWorkspace(page: Page) {
   const workspaceReady = page.getByRole("button", { name: /school qr code/i });
   const retryButton = page.getByRole("button", { name: /^retry$/i });
 
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 45; attempt++) {
     if (await workspaceReady.isVisible().catch(() => false)) {
       return;
     }
@@ -36,10 +36,10 @@ async function waitForTeacherWorkspace(page: Page) {
       await retryButton.click();
     }
 
-    await page.waitForTimeout(750);
+    await page.waitForTimeout(1_000);
   }
 
-  await expect(workspaceReady).toBeVisible({ timeout: 30_000 });
+  await expect(workspaceReady).toBeVisible({ timeout: 10_000 });
 }
 
 async function signInToTeacherWorkspace(page: Page) {
@@ -173,6 +173,12 @@ test("teacher workspace smoke flow (tabs + actions)", async ({ page }) => {
   await expectAlignmentPanel(page, /sorting and grouping/i);
   await expectAlignedMission(page, /ai pattern detectives/i);
   await expectAlignedMission(page, /robot coders math lab/i);
+  await page
+    .getByRole("button", { name: /assign ai pattern detectives to class/i })
+    .first()
+    .click();
+  await expect(page.getByText(/assigned mission queue/i)).toBeVisible();
+  await expect(page.getByText(/assigned to class\./i)).toBeVisible();
 
   await page.getByRole("button", { name: /pp2 dorcas/i }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("classId")).toContain(

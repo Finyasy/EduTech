@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/server/prisma";
 import { requireAdmin } from "@/lib/server/auth";
+import { parseJsonBody } from "@/lib/server/request";
+import { normalizeYouTubeVideoId } from "@/lib/youtube";
 
 const updateLessonSchema = z.object({
   courseId: z.string().min(1).optional(),
@@ -34,7 +37,12 @@ export async function PATCH(
   }
 
   const { lessonId } = await params;
-  const payload = updateLessonSchema.safeParse(await request.json());
+  const parsedBody = await parseJsonBody<unknown>(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const payload = updateLessonSchema.safeParse(parsedBody.data);
   if (!payload.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: payload.error.flatten() },
@@ -42,9 +50,22 @@ export async function PATCH(
     );
   }
 
-  if (payload.data.courseId) {
+  const updateData = { ...payload.data };
+
+  if (updateData.videoId !== undefined) {
+    const normalizedVideoId = normalizeYouTubeVideoId(updateData.videoId);
+    if (!normalizedVideoId) {
+      return NextResponse.json(
+        { error: "Provide a valid YouTube video ID or URL." },
+        { status: 400 },
+      );
+    }
+    updateData.videoId = normalizedVideoId;
+  }
+
+  if (updateData.courseId) {
     const course = await prisma.course.findUnique({
-      where: { id: payload.data.courseId },
+      where: { id: updateData.courseId },
       select: { id: true },
     });
     if (!course) {
@@ -62,8 +83,18 @@ export async function PATCH(
   try {
     const lesson = await prisma.lesson.update({
       where: { id: lessonId },
-      data: payload.data,
+      data: updateData,
     });
+
+    revalidateTag("courses", { expire: 0 });
+    revalidateTag(`lesson:${lessonId}`, { expire: 0 });
+    revalidateTag(`course:${existing.courseId}`, { expire: 0 });
+    revalidateTag(`lessons:${existing.courseId}`, { expire: 0 });
+    if (updateData.courseId && updateData.courseId !== existing.courseId) {
+      revalidateTag(`course:${updateData.courseId}`, { expire: 0 });
+      revalidateTag(`lessons:${updateData.courseId}`, { expire: 0 });
+    }
+
     return NextResponse.json({ ok: true, lesson });
   } catch (error) {
     if (
@@ -113,6 +144,11 @@ export async function DELETE(
     prisma.quizQuestion.deleteMany({ where: { lessonId } }),
     prisma.lesson.delete({ where: { id: lessonId } }),
   ]);
+
+  revalidateTag("courses", { expire: 0 });
+  revalidateTag(`lesson:${lessonId}`, { expire: 0 });
+  revalidateTag(`course:${existing.courseId}`, { expire: 0 });
+  revalidateTag(`lessons:${existing.courseId}`, { expire: 0 });
 
   return NextResponse.json({ ok: true });
 }

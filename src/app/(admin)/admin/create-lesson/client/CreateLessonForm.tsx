@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseForAdmin } from "@/lib/server/data";
+import { normalizeYouTubeVideoId } from "@/lib/youtube";
 
 type CreateLessonFormProps = {
   courses: CourseForAdmin[];
@@ -48,6 +49,12 @@ export default function CreateLessonForm({
       return;
     }
 
+    const normalizedVideoId = normalizeYouTubeVideoId(formState.videoId);
+    if (!normalizedVideoId) {
+      setError("Use a valid YouTube video ID or URL.");
+      return;
+    }
+
     setIsSaving(true);
     setResult(null);
     setError(null);
@@ -58,7 +65,7 @@ export default function CreateLessonForm({
         body: JSON.stringify({
           courseId: formState.courseId,
           title: formState.title,
-          videoId: formState.videoId,
+          videoId: normalizedVideoId,
           order: Number(formState.order),
           notes: formState.notes,
           isPublished: formState.isPublished,
@@ -129,12 +136,13 @@ export default function CreateLessonForm({
           />
         </label>
         <label className="text-sm text-slate-700">
-          YouTube video ID
+          YouTube video (ID or URL)
           <input
             type="text"
             value={formState.videoId}
             onChange={(event) => handleChange("videoId", event.target.value)}
             className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+            placeholder="e.g. dQw4w9WgXcQ or https://youtube.com/watch?v=..."
           />
         </label>
         <label className="text-sm text-slate-700">

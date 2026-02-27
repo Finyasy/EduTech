@@ -136,7 +136,7 @@ function AuthedProgressPanel({ lessonId }: { lessonId: string }) {
         </p>
         <Link
           href="/sign-in"
-          className="mt-4 inline-flex rounded-full bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-600"
+          className="mt-4 inline-flex min-h-11 items-center rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600"
         >
           Sign in
         </Link>
@@ -177,7 +177,7 @@ function AuthedProgressPanel({ lessonId }: { lessonId: string }) {
           type="button"
           onClick={() => persistProgress(progress, progress >= 100)}
           disabled={saveState === "saving"}
-          className="rounded-full bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-70"
+          className="min-h-11 rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-70"
         >
           Save progress
         </button>
@@ -185,7 +185,7 @@ function AuthedProgressPanel({ lessonId }: { lessonId: string }) {
           type="button"
           onClick={() => persistProgress(100, true)}
           disabled={saveState === "saving" || Boolean(completedAt)}
-          className="rounded-full border border-orange-200 bg-white px-4 py-2 text-xs font-semibold text-orange-700 transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-70"
+          className="min-h-11 rounded-full border border-orange-200 bg-white px-4 py-2 text-sm font-semibold text-orange-700 transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {completedAt ? "Completed" : "Mark complete"}
         </button>

@@ -3,6 +3,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import AuthNav from "@/components/shared/AuthNav";
 import SiteHeader from "@/components/shared/SiteHeader";
+import {
+  compareCoursesByCurriculumPlan,
+  getCourseCurriculumPlan,
+} from "@/lib/curriculum/learning-path";
 import { requireStaff } from "@/lib/server/auth";
 import { listCourses, type CourseOverview } from "@/lib/server/data";
 import TeacherWorkspaceRouteShell from "./TeacherWorkspaceRouteShell";
@@ -47,7 +51,8 @@ export default async function TeacherWorkspaceScaffold({
 
   const isAdmin = staffUser.role === "ADMIN";
   const courses = await listCourses().catch(() => [] as CourseOverview[]);
-  const missionPreview = courses.slice(0, 3);
+  const orderedCourses = [...courses].sort(compareCoursesByCurriculumPlan);
+  const missionPreview = orderedCourses.slice(0, 3);
   const hasCourseFallback = courses.some((course) => course.isFallbackData);
   const title =
     variant === "admin" ? "Admin Teaching Console" : "Teacher Workspace";
@@ -203,6 +208,11 @@ export default async function TeacherWorkspaceScaffold({
                         {course.pathwayStage}
                       </span>
                     )}
+                    {getCourseCurriculumPlan(course.id)?.priority && (
+                      <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-2 py-1 text-lime-100">
+                        {getCourseCurriculumPlan(course.id)?.priority}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                     {course.gradeLevel}
@@ -213,6 +223,11 @@ export default async function TeacherWorkspaceScaffold({
                   <p className="mt-2 line-clamp-2 text-sm text-slate-300">
                     {course.description}
                   </p>
+                  {getCourseCurriculumPlan(course.id)?.stickyHook && (
+                    <p className="mt-2 text-xs text-slate-400">
+                      {getCourseCurriculumPlan(course.id)?.stickyHook}
+                    </p>
+                  )}
                   <div className="mt-3 space-y-1 text-xs text-slate-300">
                     {course.aiFocus && (
                       <p>

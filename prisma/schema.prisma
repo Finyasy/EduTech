@@ -8,12 +8,19 @@ datasource db {
 
 enum UserRole {
   ADMIN
+  TEACHER
   STUDENT
 }
 
 enum QuestionType {
   MULTIPLE_CHOICE
   SHORT_ANSWER
+}
+
+enum TeacherSessionLearnerStatus {
+  PRACTICED_ENOUGH
+  KEEP_GOING
+  NEED_MORE_PRACTICE
 }
 
 model User {
@@ -30,14 +37,21 @@ model User {
 }
 
 model Course {
-  id          String   @id @default(cuid())
-  title       String
-  description String
-  gradeLevel  String
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  lessons     Lesson[]
+  id               String   @id @default(cuid())
+  title            String
+  description      String
+  gradeLevel       String
+  ageBand          String?
+  pathwayStage     String?
+  aiFocus          String?
+  codingFocus      String?
+  mathFocus        String?
+  missionOutcome   String?
+  sessionBlueprint String?
+  isPublished      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lessons          Lesson[]
 }
 
 model Lesson {
@@ -140,4 +154,89 @@ model GameBest {
   game       Game     @relation(fields: [gameId], references: [id])
 
   @@unique([userId, gameId])
+}
+
+model TeacherSchoolProfile {
+  id                 String   @id @default(cuid())
+  ownerKey           String   @unique
+  schoolName         String
+  country            String
+  appVersion         String
+  deviceId           String
+  connectivityStatus String
+  contentStatus      String
+  supportEmail       String
+  schoolQrCode       String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model TeacherClassroom {
+  id            String               @id @default(cuid())
+  ownerKey      String
+  name          String
+  grade         String
+  teacherName   String
+  teacherPhone  String
+  cardColor     String
+  isArchived    Boolean              @default(false)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  learners      TeacherLearner[]
+  sessionStatus TeacherSessionStatus[]
+  assignments   TeacherMissionAssignment[]
+
+  @@index([ownerKey, isArchived])
+}
+
+model TeacherLearner {
+  id            String               @id @default(cuid())
+  classId       String
+  name          String
+  avatarHue     Int
+  weeklyMinutes Int                  @default(0)
+  lastWeekMinutes Int                @default(0)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  classroom     TeacherClassroom     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sessionStatus TeacherSessionStatus[]
+
+  @@index([classId])
+}
+
+model TeacherSessionStatus {
+  id         String                       @id @default(cuid())
+  classId    String
+  learnerId  String
+  activityId String
+  status     TeacherSessionLearnerStatus @default(KEEP_GOING)
+  updatedAt  DateTime                     @updatedAt
+  classroom  TeacherClassroom             @relation(fields: [classId], references: [id], onDelete: Cascade)
+  learner    TeacherLearner               @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, learnerId, activityId])
+  @@index([classId, activityId])
+}
+
+model TeacherMissionAssignment {
+  id         String          @id @default(cuid())
+  ownerKey   String
+  classId    String
+  dedupeKey  String          @unique
+  courseId   String
+  courseTitle String
+  target     String
+  subjectId  String?
+  strandId   String?
+  activityId String?
+  learnerIds Json?
+  note       String?
+  status     String          @default("ASSIGNED")
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  classroom  TeacherClassroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@index([ownerKey, classId, updatedAt])
+  @@index([ownerKey, status])
+  @@index([classId, target])
 }

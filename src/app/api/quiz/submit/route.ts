@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { ensureUser } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
+import { parseJsonBody } from "@/lib/server/request";
 
 const quizSchema = z.object({
   lessonId: z.string().min(1),
@@ -33,7 +34,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = quizSchema.safeParse(await request.json());
+  const parsedBody = await parseJsonBody<unknown>(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const payload = quizSchema.safeParse(parsedBody.data);
   if (!payload.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: payload.error.flatten() },
@@ -68,6 +74,7 @@ export async function POST(request: Request) {
     answers.map((answer) => [answer.questionId, answer.answer.trim()]),
   );
 
+  const includeAnswerKey = Boolean(userId);
   const results = questions.map((question) => {
     const given = answerMap.get(question.id);
     const normalizedGiven =
@@ -82,8 +89,8 @@ export async function POST(request: Request) {
     return {
       questionId: question.id,
       correct,
-      correctAnswer: question.answer,
-      explanation: question.explanation ?? null,
+      correctAnswer: includeAnswerKey ? question.answer : null,
+      explanation: includeAnswerKey ? question.explanation ?? null : null,
     };
   });
 

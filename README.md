@@ -39,18 +39,31 @@ Create a `.env.local` with the following values:
 
 ```bash
 # Database (optional; required for admin + persistence)
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DB"
+DATABASE_URL="postgresql://USER:PASSWORD@POOLER_HOST:5432/DB"
+
+# Direct DB URL for Prisma migrate/seed (recommended for Neon)
+DIRECT_URL="postgresql://USER:PASSWORD@DIRECT_HOST:5432/DB"
+
+# Optional explicit override for migrate/seed commands
+MIGRATE_DATABASE_URL="postgresql://USER:PASSWORD@DIRECT_HOST:5432/DB"
 
 # Clerk (required for auth UI)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
 
 # Comma-separated list of admin emails
 ADMIN_EMAILS="admin@example.com,other@example.com"
+
+# Comma-separated list of teacher emails
+TEACHER_EMAILS="teacher@example.com,other-teacher@example.com"
 ```
 
 Notes:
 - If `DATABASE_URL` is not set, the app serves mock data for courses, lessons, and games.
 - Admin pages require both `DATABASE_URL` and a user whose email appears in `ADMIN_EMAILS`.
+- Teacher workspace requires a signed-in staff account when DB is configured:
+  - `ADMIN_EMAILS` -> Admin role
+  - `TEACHER_EMAILS` -> Teacher role
+- Prisma migrate/seed uses `MIGRATE_DATABASE_URL` if set, otherwise `DIRECT_URL`, then `DATABASE_URL`.
 
 ### Prisma (optional)
 

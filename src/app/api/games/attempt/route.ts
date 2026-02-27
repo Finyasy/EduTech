@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { ensureUser } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
+import { parseJsonBody } from "@/lib/server/request";
 
 const attemptSchema = z.object({
   gameLevelId: z.string().min(1),
@@ -25,7 +26,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = attemptSchema.safeParse(await request.json());
+  const parsedBody = await parseJsonBody<unknown>(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const payload = attemptSchema.safeParse(parsedBody.data);
   if (!payload.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: payload.error.flatten() },

@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { getPrisma } from "@/lib/server/prisma";
 import { requireAdmin } from "@/lib/server/auth";
+import { parseJsonBody } from "@/lib/server/request";
+
+const ageBandSchema = z.enum(["5-7", "8-10", "11-14"]);
+const pathwayStageSchema = z.enum(["Explorer", "Builder", "Creator"]);
+const optionalFieldSchema = z.string().trim().min(2).max(180).nullable().optional();
 
 const updateCourseSchema = z.object({
-  title: z.string().min(2).optional(),
-  description: z.string().min(5).optional(),
-  gradeLevel: z.string().min(2).optional(),
+  title: z.string().trim().min(2).optional(),
+  description: z.string().trim().min(5).optional(),
+  gradeLevel: z.string().trim().min(2).optional(),
+  ageBand: ageBandSchema.nullable().optional(),
+  pathwayStage: pathwayStageSchema.nullable().optional(),
+  aiFocus: optionalFieldSchema,
+  codingFocus: optionalFieldSchema,
+  mathFocus: optionalFieldSchema,
+  missionOutcome: z.string().trim().min(2).max(240).nullable().optional(),
+  sessionBlueprint: z.string().trim().min(2).max(120).nullable().optional(),
   isPublished: z.boolean().optional(),
 });
 
@@ -31,7 +44,12 @@ export async function PATCH(
   }
 
   const { courseId } = await params;
-  const payload = updateCourseSchema.safeParse(await request.json());
+  const parsedBody = await parseJsonBody<unknown>(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const payload = updateCourseSchema.safeParse(parsedBody.data);
   if (!payload.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: payload.error.flatten() },
@@ -50,6 +68,11 @@ export async function PATCH(
     where: { id: courseId },
     data: payload.data,
   });
+
+  revalidateTag("courses", { expire: 0 });
+  revalidateTag(`course:${courseId}`, { expire: 0 });
+  revalidateTag(`lessons:${courseId}`, { expire: 0 });
+
   return NextResponse.json({ ok: true, course });
 }
 
@@ -93,6 +116,10 @@ export async function DELETE(
     prisma.lesson.deleteMany({ where: { courseId } }),
     prisma.course.delete({ where: { id: courseId } }),
   ]);
+
+  revalidateTag("courses", { expire: 0 });
+  revalidateTag(`course:${courseId}`, { expire: 0 });
+  revalidateTag(`lessons:${courseId}`, { expire: 0 });
 
   return NextResponse.json({ ok: true });
 }

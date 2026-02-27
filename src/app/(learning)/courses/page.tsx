@@ -1,5 +1,10 @@
 import Link from "next/link";
 import SiteHeader from "@/components/shared/SiteHeader";
+import {
+  compareCoursesByCurriculumPlan,
+  getCourseCurriculumPlan,
+  getCourseSequenceForAgeBand,
+} from "@/lib/curriculum/learning-path";
 import { listCourses } from "@/lib/server/data";
 import type { CourseOverview } from "@/lib/server/data";
 
@@ -127,6 +132,8 @@ export default async function CoursesPage() {
     const items = courses
       .filter((course) => getAgeBandKey(course.ageBand) === section.key)
       .sort((a, b) => {
+        const curriculumDiff = compareCoursesByCurriculumPlan(a, b);
+        if (curriculumDiff !== 0) return curriculumDiff;
         const stageDiff =
           (STAGE_ORDER[a.pathwayStage ?? "Mission"] ?? 99) -
           (STAGE_ORDER[b.pathwayStage ?? "Mission"] ?? 99);
@@ -284,6 +291,24 @@ export default async function CoursesPage() {
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
                     {group.subtitle}
                   </p>
+                  {group.key !== "mixed" && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Recommended path
+                      </span>
+                      {getCourseSequenceForAgeBand(group.key as "5-7" | "8-10" | "11-14")
+                        .map((plan) => courses.find((course) => course.id === plan.courseId))
+                        .filter((course): course is CourseOverview => Boolean(course))
+                        .map((course) => (
+                          <span
+                            key={`${group.key}-${course.id}`}
+                            className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-slate-700 shadow-sm"
+                          >
+                            {course.title}
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </div>
                 <div className="rounded-2xl border border-white/80 bg-white/85 p-4 text-sm text-slate-700 shadow-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -302,6 +327,10 @@ export default async function CoursesPage() {
                   const startHref = course.firstLessonId
                     ? `/courses/${course.id}/lessons/${course.firstLessonId}`
                     : `/courses/${course.id}`;
+                  const curriculumPlan = getCourseCurriculumPlan(course.id);
+                  const nextMissions = (curriculumPlan?.nextMissionIds ?? [])
+                    .map((id) => courses.find((item) => item.id === id))
+                    .filter((item): item is CourseOverview => Boolean(item));
 
                   return (
                     <article
@@ -322,6 +351,11 @@ export default async function CoursesPage() {
                             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">
                               {course.lessonCount} lessons
                             </span>
+                            {curriculumPlan?.priority && (
+                              <span className="rounded-full border border-lime-200 bg-lime-50 px-3 py-1 text-lime-800">
+                                {curriculumPlan.priority}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                             {missionMood(course)}
@@ -344,6 +378,11 @@ export default async function CoursesPage() {
                           <p className="mt-1 text-sm text-slate-700">
                             {quickWinLine(course)}
                           </p>
+                          {curriculumPlan?.stickyHook && (
+                            <p className="mt-2 text-xs text-slate-500">
+                              {curriculumPlan.stickyHook}
+                            </p>
+                          )}
                         </div>
 
                         <div className="grid gap-3 sm:grid-cols-3">
@@ -387,6 +426,22 @@ export default async function CoursesPage() {
                           <p className="mt-2 text-xs text-slate-500">
                             {STAGE_HOOKS[stage] ?? STAGE_HOOKS.Mission}
                           </p>
+                          {nextMissions.length > 0 && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                Next mission
+                              </span>
+                              {nextMissions.map((nextCourse) => (
+                                <Link
+                                  key={`${course.id}-next-${nextCourse.id}`}
+                                  href={`/courses/${nextCourse.id}`}
+                                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+                                >
+                                  {nextCourse.title}
+                                </Link>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex flex-wrap items-center justify-between gap-3">

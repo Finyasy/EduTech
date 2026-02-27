@@ -57,6 +57,38 @@ export type TeacherSchoolSettings = {
   schoolQrCode: string;
 };
 
+export type TeacherMissionAssignment = {
+  id: string;
+  classId: string;
+  courseId: string;
+  courseTitle: string;
+  target: "CLASS" | "NEEDS_PRACTICE";
+  subjectId: string | null;
+  strandId: string | null;
+  activityId: string | null;
+  learnerIds: string[];
+  note: string | null;
+  status: "ASSIGNED" | "IN_PROGRESS" | "COMPLETED";
+  createdAt: string;
+  updatedAt: string;
+  isFallbackData?: boolean;
+};
+
+export type TeacherAssignmentAnalytics = {
+  totalAssignments: number;
+  recentAssignments24h: number;
+  assignedClassCount: number;
+  byTarget: {
+    CLASS: number;
+    NEEDS_PRACTICE: number;
+  };
+  byStatus: {
+    ASSIGNED: number;
+    IN_PROGRESS: number;
+    COMPLETED: number;
+  };
+};
+
 export type TeacherWorkspaceSnapshot = {
   isFallbackData?: boolean;
   school: TeacherSchoolSettings;
@@ -79,4 +111,6 @@ export type TeacherWorkspaceSnapshot = {
     thisWeekMinutes: number;
     lastWeekMinutes: number;
   }>;
+  assignments: TeacherMissionAssignment[];
+  assignmentAnalytics: TeacherAssignmentAnalytics;
 };

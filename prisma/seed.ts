@@ -1,34 +1,88 @@
-import { PrismaClient, QuestionType } from "@prisma/client";
+import {
+  Prisma,
+  PrismaClient,
+  QuestionType,
+  TeacherSessionLearnerStatus,
+} from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required to run the seed script.");
+const connectionCandidates = [
+  process.env.MIGRATE_DATABASE_URL ??
+    process.env.DIRECT_URL ??
+    process.env.DATABASE_URL,
+  process.env.DIRECT_URL,
+  process.env.DATABASE_URL,
+]
+  .filter((value): value is string => Boolean(value))
+  .filter((value, index, all) => all.indexOf(value) === index);
+
+if (connectionCandidates.length === 0) {
+  throw new Error(
+    "MIGRATE_DATABASE_URL, DIRECT_URL, or DATABASE_URL is required to run the seed script.",
+  );
 }
 
-const pool = new Pool({ connectionString: databaseUrl });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+const hostFromConnectionString = (connectionString: string) => {
+  const match = connectionString.match(/@([^/?]+)/);
+  return match?.[1] ?? "unknown-host";
+};
 
-async function main() {
+const isConnectivityError = (error: unknown) => {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === "P1000" || error.code === "P1001")
+  ) {
+    return true;
+  }
+
+  if (error && typeof error === "object") {
+    const code = (error as { code?: string }).code;
+    return code === "P1000" || code === "P1001";
+  }
+
+  return false;
+};
+
+async function seedDatabase(prisma: PrismaClient) {
   const course = await prisma.course.upsert({
     where: { id: "course-logic" },
-    update: {},
+    update: {
+      title: "AI Pattern Detectives",
+      description:
+        "Kids train simple classifiers by spotting patterns in shapes, sounds, and pictures.",
+      gradeLevel: "Ages 5-7",
+      ageBand: "5-7",
+      pathwayStage: "Explorer",
+      aiFocus: "Classification basics",
+      codingFocus: "Sequencing and condition blocks",
+      mathFocus: "Patterns and counting",
+      missionOutcome: "Train a sorting robot to classify objects.",
+      sessionBlueprint: "10 min learn, 20 min build, 5 min share",
+      isPublished: true,
+    },
     create: {
       id: "course-logic",
-      title: "Logic Explorers",
-      description: "Patterns, sequences, and critical thinking challenges.",
-      gradeLevel: "Grades 3-5",
+      title: "AI Pattern Detectives",
+      description:
+        "Kids train simple classifiers by spotting patterns in shapes, sounds, and pictures.",
+      gradeLevel: "Ages 5-7",
+      ageBand: "5-7",
+      pathwayStage: "Explorer",
+      aiFocus: "Classification basics",
+      codingFocus: "Sequencing and condition blocks",
+      mathFocus: "Patterns and counting",
+      missionOutcome: "Train a sorting robot to classify objects.",
+      sessionBlueprint: "10 min learn, 20 min build, 5 min share",
       isPublished: true,
       lessons: {
         create: [
           {
             id: "lesson-logic-1",
-            title: "Spot the Pattern",
-            videoId: "mC6Y9xq-0RA",
+            title: "Pattern Hunter Warmup",
+            videoId: "M7lc1UVf-VE",
             order: 1,
-            notes: "Find the next item in a pattern and explain your reasoning.",
+            notes: "Use picture cards to find repeating patterns and label them.",
             isPublished: true,
             questions: {
               create: [
@@ -44,18 +98,18 @@ async function main() {
           },
           {
             id: "lesson-logic-2",
-            title: "Logic Grids",
-            videoId: "8qjV4yjiBrg",
+            title: "Train the Sorting Robot",
+            videoId: "ysz5S6PUM-U",
             order: 2,
-            notes: "Solve puzzles using clues and elimination.",
+            notes: "Build simple if-then rules so a robot can sort shapes correctly.",
             isPublished: true,
           },
           {
             id: "lesson-logic-3",
-            title: "If-Then Thinking",
-            videoId: "hEV6G2-15R4",
+            title: "Share Your Robot Mission",
+            videoId: "aqz-KE-bpKQ",
             order: 3,
-            notes: "Use if-then statements to solve simple mysteries.",
+            notes: "Test your classifier, explain mistakes, and improve one rule.",
             isPublished: true,
           },
         ],
@@ -104,37 +158,58 @@ async function main() {
 
   await prisma.course.upsert({
     where: { id: "course-math" },
-    update: {},
+    update: {
+      title: "Robot Coders Math Lab",
+      description:
+        "Learners use loops and variables to control robots while testing coordinates and probability.",
+      gradeLevel: "Ages 8-10",
+      ageBand: "8-10",
+      pathwayStage: "Builder",
+      aiFocus: "Rule-based decision systems",
+      codingFocus: "Loops, variables, and debugging",
+      mathFocus: "Coordinates, fractions, and probability",
+      missionOutcome: "Build a robot path planner that avoids obstacles.",
+      sessionBlueprint: "12 min learn, 20 min build, 8 min reflect",
+      isPublished: true,
+    },
     create: {
       id: "course-math",
-      title: "Math Adventures",
-      description: "Numbers, fractions, and problem-solving quests.",
-      gradeLevel: "Grades 4-6",
+      title: "Robot Coders Math Lab",
+      description:
+        "Learners use loops and variables to control robots while testing coordinates and probability.",
+      gradeLevel: "Ages 8-10",
+      ageBand: "8-10",
+      pathwayStage: "Builder",
+      aiFocus: "Rule-based decision systems",
+      codingFocus: "Loops, variables, and debugging",
+      mathFocus: "Coordinates, fractions, and probability",
+      missionOutcome: "Build a robot path planner that avoids obstacles.",
+      sessionBlueprint: "12 min learn, 20 min build, 8 min reflect",
       isPublished: true,
       lessons: {
         create: [
           {
             id: "lesson-math-1",
-            title: "Fractions in the Wild",
-            videoId: "4lkds9NL2qg",
+            title: "Coordinates for Robot Moves",
+            videoId: "M7lc1UVf-VE",
             order: 1,
-            notes: "Fractions show up in cooking, building, and sports.",
+            notes: "Guide a robot on a grid using x-y coordinates.",
             isPublished: true,
           },
           {
             id: "lesson-math-2",
-            title: "Multiplication Tricks",
-            videoId: "t2D1dGyG2A0",
+            title: "Loop Lab and Debug Time",
+            videoId: "ysz5S6PUM-U",
             order: 2,
-            notes: "Practice quick tricks to multiply numbers faster.",
+            notes: "Use loops to repeat moves and fix logic bugs when the robot crashes.",
             isPublished: true,
           },
           {
             id: "lesson-math-3",
-            title: "Solve the Word Problem",
-            videoId: "nV0qKMh8Yx4",
+            title: "Probability Power-Ups",
+            videoId: "aqz-KE-bpKQ",
             order: 3,
-            notes: "Break down word problems into simple steps.",
+            notes: "Test random events and tune your robot to make better choices.",
             isPublished: true,
           },
         ],
@@ -142,17 +217,262 @@ async function main() {
     },
   });
 
+  await prisma.course.upsert({
+    where: { id: "course-story" },
+    update: {
+      title: "Story Chatbot Studio",
+      description:
+        "Students design a safe storytelling chatbot and use data tables to improve responses.",
+      gradeLevel: "Ages 11-14",
+      ageBand: "11-14",
+      pathwayStage: "Creator",
+      aiFocus: "Prompt design, bias checks, and model behavior",
+      codingFocus: "Python functions and simple data handling",
+      mathFocus: "Averages, percentages, and data interpretation",
+      missionOutcome: "Create a classroom-safe chatbot for story prompts.",
+      sessionBlueprint: "15 min learn, 20 min build, 10 min present",
+      isPublished: true,
+    },
+    create: {
+      id: "course-story",
+      title: "Story Chatbot Studio",
+      description:
+        "Students design a safe storytelling chatbot and use data tables to improve responses.",
+      gradeLevel: "Ages 11-14",
+      ageBand: "11-14",
+      pathwayStage: "Creator",
+      aiFocus: "Prompt design, bias checks, and model behavior",
+      codingFocus: "Python functions and simple data handling",
+      mathFocus: "Averages, percentages, and data interpretation",
+      missionOutcome: "Create a classroom-safe chatbot for story prompts.",
+      sessionBlueprint: "15 min learn, 20 min build, 10 min present",
+      isPublished: true,
+      lessons: {
+        create: [
+          {
+            id: "lesson-story-1",
+            title: "Prompt Safety Playground",
+            videoId: "M7lc1UVf-VE",
+            order: 1,
+            notes: "Learn safe prompt starters and blocked topics for school chatbots.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-story-2",
+            title: "Python Story Functions",
+            videoId: "ysz5S6PUM-U",
+            order: 2,
+            notes: "Create reusable Python functions that generate story ideas.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-story-3",
+            title: "Bias Check and Demo Day",
+            videoId: "aqz-KE-bpKQ",
+            order: 3,
+            notes: "Review response fairness with class data and present your chatbot.",
+            isPublished: true,
+          },
+        ],
+      },
+    },
+  });
+
+  const ownerKey = "seed-teacher";
+  await prisma.teacherSchoolProfile.upsert({
+    where: { ownerKey },
+    update: {
+      schoolName: "Kwa Njenga",
+      country: "Kenya",
+      appVersion: "4.1.0",
+      deviceId: "lb-SEED0001",
+      connectivityStatus: "OKAY",
+      contentStatus: "UP_TO_DATE",
+      supportEmail: "support@learnbridge.app",
+      schoolQrCode: "LB-SEED-2026-PP",
+    },
+    create: {
+      ownerKey,
+      schoolName: "Kwa Njenga",
+      country: "Kenya",
+      appVersion: "4.1.0",
+      deviceId: "lb-SEED0001",
+      connectivityStatus: "OKAY",
+      contentStatus: "UP_TO_DATE",
+      supportEmail: "support@learnbridge.app",
+      schoolQrCode: "LB-SEED-2026-PP",
+    },
+  });
+
+  await prisma.teacherClassroom.upsert({
+    where: { id: "class-seed-pp1" },
+    update: {
+      ownerKey,
+      name: "Tr. Mary and Ashlyn",
+      grade: "PP1",
+      teacherName: "Mary Wanjiru",
+      teacherPhone: "+254700000001",
+      cardColor: "bg-rose-100",
+      isArchived: false,
+    },
+    create: {
+      id: "class-seed-pp1",
+      ownerKey,
+      name: "Tr. Mary and Ashlyn",
+      grade: "PP1",
+      teacherName: "Mary Wanjiru",
+      teacherPhone: "+254700000001",
+      cardColor: "bg-rose-100",
+      isArchived: false,
+    },
+  });
+
+  await prisma.teacherClassroom.upsert({
+    where: { id: "class-seed-pp2" },
+    update: {
+      ownerKey,
+      name: "Dorcas",
+      grade: "PP2",
+      teacherName: "Dorcas Achieng",
+      teacherPhone: "+254700000002",
+      cardColor: "bg-sky-100",
+      isArchived: false,
+    },
+    create: {
+      id: "class-seed-pp2",
+      ownerKey,
+      name: "Dorcas",
+      grade: "PP2",
+      teacherName: "Dorcas Achieng",
+      teacherPhone: "+254700000002",
+      cardColor: "bg-sky-100",
+      isArchived: false,
+    },
+  });
+
+  await prisma.teacherLearner.upsert({
+    where: { id: "learner-seed-joy" },
+    update: {
+      classId: "class-seed-pp1",
+      name: "Joy Nelima",
+      avatarHue: 210,
+      weeklyMinutes: 32,
+      lastWeekMinutes: 19,
+    },
+    create: {
+      id: "learner-seed-joy",
+      classId: "class-seed-pp1",
+      name: "Joy Nelima",
+      avatarHue: 210,
+      weeklyMinutes: 32,
+      lastWeekMinutes: 19,
+    },
+  });
+
+  await prisma.teacherLearner.upsert({
+    where: { id: "learner-seed-glory" },
+    update: {
+      classId: "class-seed-pp1",
+      name: "Glory Ndanu",
+      avatarHue: 344,
+      weeklyMinutes: 28,
+      lastWeekMinutes: 17,
+    },
+    create: {
+      id: "learner-seed-glory",
+      classId: "class-seed-pp1",
+      name: "Glory Ndanu",
+      avatarHue: 344,
+      weeklyMinutes: 28,
+      lastWeekMinutes: 17,
+    },
+  });
+
+  await prisma.teacherSessionStatus.upsert({
+    where: {
+      classId_learnerId_activityId: {
+        classId: "class-seed-pp1",
+        learnerId: "learner-seed-joy",
+        activityId: "activity-sorting-grouping",
+      },
+    },
+    update: {
+      status: TeacherSessionLearnerStatus.PRACTICED_ENOUGH,
+    },
+    create: {
+      classId: "class-seed-pp1",
+      learnerId: "learner-seed-joy",
+      activityId: "activity-sorting-grouping",
+      status: TeacherSessionLearnerStatus.PRACTICED_ENOUGH,
+    },
+  });
+
+  await prisma.teacherSessionStatus.upsert({
+    where: {
+      classId_learnerId_activityId: {
+        classId: "class-seed-pp1",
+        learnerId: "learner-seed-glory",
+        activityId: "activity-sorting-grouping",
+      },
+    },
+    update: {
+      status: TeacherSessionLearnerStatus.KEEP_GOING,
+    },
+    create: {
+      classId: "class-seed-pp1",
+      learnerId: "learner-seed-glory",
+      activityId: "activity-sorting-grouping",
+      status: TeacherSessionLearnerStatus.KEEP_GOING,
+    },
+  });
+
   return course;
 }
 
-main()
-  .then(async () => {
+async function runSeedWithConnection(connectionString: string) {
+  const pool = new Pool({ connectionString });
+  const adapter = new PrismaPg(pool);
+  const prisma = new PrismaClient({ adapter });
+
+  try {
+    await seedDatabase(prisma);
+  } finally {
     await prisma.$disconnect();
     await pool.end();
-  })
-  .catch(async (error) => {
-    console.error(error);
-    await prisma.$disconnect();
-    await pool.end();
-    process.exit(1);
-  });
+  }
+}
+
+async function main() {
+  let lastError: unknown = null;
+
+  for (const [index, connectionString] of connectionCandidates.entries()) {
+    try {
+      await runSeedWithConnection(connectionString);
+      console.log(
+        `Seed completed using ${hostFromConnectionString(connectionString)}.`,
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+      const hasFallback = index < connectionCandidates.length - 1;
+
+      if (isConnectivityError(error) && hasFallback) {
+        console.warn(
+          `Seed connection failed for ${hostFromConnectionString(
+            connectionString,
+          )}; trying next database URL...`,
+        );
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError ?? new Error("Unable to seed database.");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

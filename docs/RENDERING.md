@@ -203,3 +203,43 @@ DEBUG_CACHE=1 pnpm start
 3. Check the server log:
    - **If you see only one** `[cache-miss] getDashboardStats` line, the second request was served from cache.
    - **If you see two**, the cache is missing (or being bypassed) and needs investigation.
+
+---
+
+## Implementation update: auth caching + client-side stats (latest)
+
+Applied two UX/perf improvements to reduce post‑sign‑in dashboard latency:
+- **Cached `ensureUser`** for 60s (per‑user, tagged), avoiding repeated Clerk+DB round‑trips on every request.
+- **Moved dashboard stats to a client fetch** (`/api/dashboard/stats`) with a lightweight skeleton, so the shell renders immediately and stats hydrate after first paint.
+
+Observed impact:
+- **Perceived speed improved**: dashboard shell loads quickly after sign‑in; stats fill in shortly after.
+- **Server render time reduced**: main `/dashboard` page no longer waits on heavy stats queries.
+
+Files touched:
+- `src/lib/server/auth.ts` (per‑user auth caching)
+- `src/app/api/dashboard/stats/route.ts` (stats endpoint)
+- `src/app/(dashboard)/dashboard/client/DashboardStatsClient.tsx` (client fetch + skeleton)
+- `src/app/(dashboard)/dashboard/page.tsx` (server shell)
+
+### Best practices reinforced
+- **Cache expensive auth/identity work** with short TTLs and tag invalidation.
+- **Defer heavy personalized data** to client fetches when it doesn’t block the initial layout.
+- **Show immediate feedback** (skeletons) to keep perceived responsiveness high.
+- **Prefer prod-mode validation** (`pnpm build && pnpm start`) for reliable cache behavior.
+
+### Future improvements
+- **Move user upsert to Clerk webhooks** (create/update user) to avoid any upsert during page renders.
+- **Server‑only auth check for nav** using Clerk middleware + `auth()` in layouts to prevent UI flicker.
+- **Add DB indexes** for `LessonProgress` (`userId`, `completedAt`) if not present to speed stats queries.
+- **Tune cache TTLs** for stats based on product needs (e.g., 30–120s) and avoid over‑refreshing.
+- **Measure with RUM** (Navigation Timing, TTFB, INP) to catch real user latency beyond dev.
+
+### Production validation (latest)
+
+- `pnpm build` completed successfully.
+- CLI timing from localhost could not be captured (curl returns code `000` in this environment).
+- **Recommended validation**: open `http://localhost:3000/dashboard` in a browser and compare:
+  1) Time to first paint of the dashboard shell.
+  2) Time to stats hydration (cards fill in after `/api/dashboard/stats` completes).
+  3) Repeat load to confirm perceived speed stays snappy.

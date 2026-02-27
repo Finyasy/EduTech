@@ -24,7 +24,7 @@ describe("server data (mock fallback)", () => {
     const result = await getCourse("course-logic");
 
     expect(result?.id).toBe("course-logic");
-    expect(result?.title).toBe("Logic Explorers");
+    expect(result?.title).toBe("AI Pattern Detectives");
   });
 
   it("lists mock games", async () => {

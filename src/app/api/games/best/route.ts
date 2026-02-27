@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { ensureUser } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
+import { parseJsonBody } from "@/lib/server/request";
 
 const bestQuerySchema = z.object({
   gameId: z.string().min(1),
@@ -68,7 +69,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = bestPayloadSchema.safeParse(await request.json());
+  const parsedBody = await parseJsonBody<unknown>(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const payload = bestPayloadSchema.safeParse(parsedBody.data);
   if (!payload.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: payload.error.flatten() },
@@ -89,24 +95,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  const best = await prisma.gameBest.upsert({
+  const existing = await prisma.gameBest.findUnique({
     where: {
       userId_gameId: {
         userId: user.id,
         gameId: payload.data.gameId,
       },
     },
-    update: {
-      bestScore: payload.data.bestScore,
-      bestTimeMs: payload.data.bestTimeMs,
-    },
-    create: {
-      userId: user.id,
-      gameId: payload.data.gameId,
-      bestScore: payload.data.bestScore,
-      bestTimeMs: payload.data.bestTimeMs,
-    },
   });
 
-  return NextResponse.json({ ok: true, bestScore: best.bestScore, bestTimeMs: best.bestTimeMs });
+  const incoming = {
+    bestScore: payload.data.bestScore,
+    bestTimeMs: payload.data.bestTimeMs,
+  };
+
+  const shouldUpdate =
+    !existing ||
+    incoming.bestScore > existing.bestScore ||
+    (incoming.bestScore === existing.bestScore &&
+      incoming.bestTimeMs < existing.bestTimeMs);
+
+  if (!shouldUpdate && existing) {
+    return NextResponse.json({
+      ok: true,
+      bestScore: existing.bestScore,
+      bestTimeMs: existing.bestTimeMs,
+      updated: false,
+    });
+  }
+
+  const best = existing
+    ? await prisma.gameBest.update({
+        where: { id: existing.id },
+        data: incoming,
+      })
+    : await prisma.gameBest.create({
+        data: {
+          userId: user.id,
+          gameId: payload.data.gameId,
+          ...incoming,
+        },
+      });
+
+  return NextResponse.json({
+    ok: true,
+    bestScore: best.bestScore,
+    bestTimeMs: best.bestTimeMs,
+    updated: true,
+  });
 }

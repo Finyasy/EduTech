@@ -4,6 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import {
+  buildTeacherAlignmentRecommendations,
+  getCourseCurriculumPlan,
+} from "@/lib/curriculum/learning-path";
 import type { CourseOverview } from "@/lib/server/data";
 import type {
   LearnerProgressStatus,
@@ -39,11 +43,6 @@ type EditClassFormState = {
 };
 
 type LearnersList = TeacherWorkspaceSnapshot["learners"];
-
-type AlignmentMatch = {
-  courseId: string;
-  reason: string;
-};
 
 const STATUS_META: Record<
   LearnerProgressStatus,
@@ -110,114 +109,6 @@ const initialsOf = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-
-const ACTIVITY_ALIGNMENT_MAP: Record<string, AlignmentMatch[]> = {
-  "activity-sorting-grouping": [
-    {
-      courseId: "course-logic",
-      reason: "Direct match for classification, patterns, and sorting thinking.",
-    },
-    {
-      courseId: "course-math",
-      reason: "Supports early rule-following and sequencing before robot math tasks.",
-    },
-  ],
-  "activity-matching-pairing": [
-    {
-      courseId: "course-logic",
-      reason: "Builds pattern recognition used in AI Pattern Detectives missions.",
-    },
-  ],
-  "activity-ordering": [
-    {
-      courseId: "course-logic",
-      reason: "Supports sequencing and condition-block thinking in beginner coding tasks.",
-    },
-    {
-      courseId: "course-math",
-      reason: "Prepares learners for ordered robot steps and debug routines.",
-    },
-  ],
-  "activity-patterns": [
-    {
-      courseId: "course-logic",
-      reason: "Strongest match for patterns + counting in the Explorer mission path.",
-    },
-  ],
-};
-
-const STRAND_ALIGNMENT_MAP: Record<string, AlignmentMatch[]> = {
-  "strand-pre-number": [
-    {
-      courseId: "course-logic",
-      reason: "Pre-number foundations feed pattern spotting and classifier thinking.",
-    },
-  ],
-  "strand-numbers": [
-    {
-      courseId: "course-math",
-      reason: "Number fluency supports coordinates, probability, and robot controls.",
-    },
-  ],
-  "strand-measurement": [
-    {
-      courseId: "course-math",
-      reason: "Measurement concepts reinforce robot movement and quantitative reasoning.",
-    },
-  ],
-  "strand-geometry": [
-    {
-      courseId: "course-math",
-      reason: "Geometry connects to coordinates and navigation in robot missions.",
-    },
-  ],
-  "strand-listening-speaking": [
-    {
-      courseId: "course-story",
-      reason: "Language fluency supports prompt design and chatbot interaction practice.",
-    },
-  ],
-  "strand-reading": [
-    {
-      courseId: "course-story",
-      reason: "Reading strengthens prompt interpretation and response quality checks.",
-    },
-  ],
-  "strand-writing": [
-    {
-      courseId: "course-story",
-      reason: "Writing skills align with storytelling chatbot prompts and revisions.",
-    },
-  ],
-};
-
-const SUBJECT_ALIGNMENT_MAP: Record<string, AlignmentMatch[]> = {
-  "subject-math": [
-    {
-      courseId: "course-math",
-      reason: "Math subject work maps to the Builder mission path.",
-    },
-    {
-      courseId: "course-logic",
-      reason: "Foundational math patterns also support AI Pattern Detectives.",
-    },
-  ],
-  "subject-language": [
-    {
-      courseId: "course-story",
-      reason: "Language strands align with the Creator chatbot storytelling mission.",
-    },
-  ],
-};
-
-const uniqueAlignment = (matches: AlignmentMatch[]) => {
-  const seen = new Set<string>();
-  return matches.filter((match) => {
-    if (seen.has(match.courseId)) return false;
-    seen.add(match.courseId);
-    return true;
-  });
-};
 
 async function readError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({}));
@@ -324,22 +215,12 @@ export default function TeacherWorkspaceClient({
     subjectOptions.find((item) => item.id === activeSubjectId) ?? null;
 
   const alignedCourseMatches = useMemo(() => {
-    const matches = uniqueAlignment([
-      ...(selectedActivity ? (ACTIVITY_ALIGNMENT_MAP[selectedActivity.id] ?? []) : []),
-      ...(activeStrandId ? (STRAND_ALIGNMENT_MAP[activeStrandId] ?? []) : []),
-      ...(activeSubjectId ? (SUBJECT_ALIGNMENT_MAP[activeSubjectId] ?? []) : []),
-    ]);
-
-    return matches
-      .map((match) => ({
-        ...match,
-        course: courseCatalog.find((course) => course.id === match.courseId) ?? null,
-      }))
-      .filter(
-        (
-          item,
-        ): item is AlignmentMatch & { course: CourseOverview } => item.course !== null,
-      );
+    return buildTeacherAlignmentRecommendations({
+      courseCatalog,
+      subjectId: activeSubjectId,
+      strandId: activeStrandId,
+      activityId: selectedActivity?.id ?? null,
+    });
   }, [activeStrandId, activeSubjectId, courseCatalog, selectedActivity]);
 
   const readOnlyAlignmentPanel =
@@ -358,7 +239,7 @@ export default function TeacherWorkspaceClient({
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {alignedCourseMatches.map(({ course, reason }, index) => (
+          {alignedCourseMatches.map(({ course, primaryReason, confidence, plan }, index) => (
             <article
               key={`${course.id}-readonly-${index}`}
               className="rounded-xl border border-white bg-white p-3"
@@ -374,9 +255,20 @@ export default function TeacherWorkspaceClient({
                     {course.pathwayStage}
                   </span>
                 )}
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">
+                  {confidence}
+                </span>
+                {plan?.priority && (
+                  <span className="rounded-full bg-lime-100 px-2 py-1 text-lime-800">
+                    {plan.priority}
+                  </span>
+                )}
               </div>
               <p className="mt-2 text-sm font-semibold text-slate-900">{course.title}</p>
-              <p className="mt-1 text-xs text-slate-600">{reason}</p>
+              <p className="mt-1 text-xs text-slate-600">{primaryReason}</p>
+              {plan?.stickyHook && (
+                <p className="mt-1 text-xs text-slate-500">{plan.stickyHook}</p>
+              )}
               <div className="mt-2 space-y-1 text-xs text-slate-600">
                 {course.aiFocus && (
                   <p>
@@ -417,6 +309,44 @@ export default function TeacherWorkspaceClient({
     });
     return grouped;
   }, [workspace.learners, workspace.sessionStatuses]);
+
+  const activeClassAssignments = useMemo(
+    () =>
+      workspace.assignments
+        .filter((assignment) => assignment.classId === activeClassId)
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+    [workspace.assignments, activeClassId],
+  );
+
+  const needsPracticeLearnerIds = useMemo(
+    () => statusBuckets.NEED_MORE_PRACTICE.map((learner) => learner.id),
+    [statusBuckets],
+  );
+
+  const activeAssignmentKeys = useMemo(
+    () =>
+      new Set(
+        activeClassAssignments
+          .filter((assignment) => assignment.status !== "COMPLETED")
+          .map(
+            (assignment) =>
+              `${assignment.courseId}|${assignment.activityId ?? ""}|${assignment.target}`,
+          ),
+      ),
+    [activeClassAssignments],
+  );
+
+  const currentActivityAssignments = useMemo(
+    () =>
+      selectedActivity
+        ? activeClassAssignments.filter(
+            (assignment) =>
+              assignment.activityId === selectedActivity.id ||
+              assignment.activityId === null,
+          )
+        : activeClassAssignments,
+    [activeClassAssignments, selectedActivity],
+  );
 
   const weeklyTotal = workspace.weeklySummary.thisWeekMinutes;
   const lastWeekTotal = workspace.weeklySummary.lastWeekMinutes;
@@ -817,6 +747,63 @@ export default function TeacherWorkspaceClient({
     }
   }
 
+  async function assignAlignedMission(input: {
+    course: CourseOverview;
+    target: "CLASS" | "NEEDS_PRACTICE";
+  }) {
+    if (!activeClassId || !selectedActivity) {
+      return;
+    }
+
+    const learnerIds =
+      input.target === "NEEDS_PRACTICE" ? needsPracticeLearnerIds : [];
+    if (input.target === "NEEDS_PRACTICE" && learnerIds.length === 0) {
+      setNotice("No learners are currently in the need more practice group.");
+      setError(null);
+      return;
+    }
+
+    setIsPending(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`/api/teach/class/${activeClassId}/assignment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: input.course.id,
+          courseTitle: input.course.title,
+          target: input.target,
+          subjectId: selectedSubject?.id,
+          strandId: selectedStrand?.id,
+          activityId: selectedActivity.id,
+          learnerIds,
+          note:
+            input.target === "NEEDS_PRACTICE"
+              ? "Assigned to learners needing more practice for the current activity."
+              : "Assigned to the active class from curriculum alignment.",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readError(response, "Unable to assign mission."));
+      }
+
+      setNotice(
+        input.target === "NEEDS_PRACTICE"
+          ? `${input.course.title} assigned to practice group.`
+          : `${input.course.title} assigned to class.`,
+      );
+      await refreshWorkspace({ classId: activeClassId, activityId: selectedActivity.id });
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to assign mission.",
+      );
+    } finally {
+      setIsPending(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {(notice || error) && (
@@ -1059,7 +1046,17 @@ export default function TeacherWorkspaceClient({
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      {alignedCourseMatches.map(({ course, reason }, index) => (
+                      {alignedCourseMatches.map(
+                        ({ course, primaryReason, reasons, confidence, plan }, index) => {
+                          const classAssignmentKey = `${course.id}|${selectedActivity.id}|CLASS`;
+                          const needsPracticeAssignmentKey = `${course.id}|${selectedActivity.id}|NEEDS_PRACTICE`;
+                          const isClassAssigned = activeAssignmentKeys.has(classAssignmentKey);
+                          const isPracticeAssigned = activeAssignmentKeys.has(
+                            needsPracticeAssignmentKey,
+                          );
+                          const planMeta = getCourseCurriculumPlan(course.id);
+
+                          return (
                         <article
                           key={`${course.id}-${index}`}
                           className="rounded-xl border border-slate-100 bg-white p-3"
@@ -1075,11 +1072,24 @@ export default function TeacherWorkspaceClient({
                                 {course.pathwayStage}
                               </span>
                             )}
+                            <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">
+                              {confidence}
+                            </span>
+                            {(plan?.priority ?? planMeta?.priority) && (
+                              <span className="rounded-full bg-lime-100 px-2 py-1 text-lime-800">
+                                {(plan?.priority ?? planMeta?.priority) as string}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-2 text-sm font-semibold text-slate-900">
                             {course.title}
                           </p>
-                          <p className="mt-1 text-xs text-slate-600">{reason}</p>
+                          <p className="mt-1 text-xs text-slate-600">{primaryReason}</p>
+                          {(planMeta?.stickyHook ?? plan?.stickyHook) && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {planMeta?.stickyHook ?? plan?.stickyHook}
+                            </p>
+                          )}
                           <div className="mt-2 space-y-1 text-xs text-slate-600">
                             {course.aiFocus && (
                               <p>
@@ -1100,6 +1110,13 @@ export default function TeacherWorkspaceClient({
                               </p>
                             )}
                           </div>
+                          {reasons.length > 1 && (
+                            <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                              {reasons.slice(1, 3).map((extraReason: string) => (
+                                <li key={extraReason}>• {extraReason}</li>
+                              ))}
+                            </ul>
+                          )}
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Link
                               href={`/courses/${course.id}`}
@@ -1107,6 +1124,44 @@ export default function TeacherWorkspaceClient({
                             >
                               Preview mission
                             </Link>
+                            <button
+                              type="button"
+                              onClick={() => void assignAlignedMission({ course, target: "CLASS" })}
+                              disabled={isPending || isWorkspaceRefreshing || !activeClassId}
+                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                                isClassAssigned
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300"
+                              }`}
+                              aria-label={`Assign ${course.title} to class`}
+                            >
+                              {isClassAssigned ? "Assigned to class" : "Assign to class"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void assignAlignedMission({
+                                  course,
+                                  target: "NEEDS_PRACTICE",
+                                })
+                              }
+                              disabled={
+                                isPending ||
+                                isWorkspaceRefreshing ||
+                                needsPracticeLearnerIds.length === 0 ||
+                                !activeClassId
+                              }
+                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                                isPracticeAssigned
+                                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                                  : "border-amber-200 bg-white text-amber-900 hover:border-amber-300"
+                              }`}
+                              aria-label={`Assign ${course.title} to practice group`}
+                            >
+                              {isPracticeAssigned
+                                ? "Assigned to practice group"
+                                : "Assign practice group"}
+                            </button>
                             <Link
                               href={tabHref("teach")}
                               className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:border-sky-300"
@@ -1115,10 +1170,66 @@ export default function TeacherWorkspaceClient({
                             </Link>
                           </div>
                         </article>
-                      ))}
+                          );
+                        },
+                      )}
                     </div>
                   </div>
                 )}
+
+                <div className="mb-4 rounded-2xl border border-white/80 bg-white/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        Assigned mission queue
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {activeClass?.name ?? "Class"} · {currentActivityAssignments.length} active assignment
+                        {currentActivityAssignments.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                      {needsPracticeLearnerIds.length} learners need practice
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {currentActivityAssignments.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+                        No missions assigned for this activity yet. Use the curriculum alignment cards above to assign one.
+                      </p>
+                    ) : (
+                      currentActivityAssignments.slice(0, 4).map((assignment) => (
+                        <div
+                          key={assignment.id}
+                          className="rounded-xl border border-slate-100 bg-white px-3 py-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {assignment.courseTitle}
+                            </p>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                assignment.target === "NEEDS_PRACTICE"
+                                  ? "bg-amber-100 text-amber-900"
+                                  : "bg-sky-100 text-sky-900"
+                              }`}
+                            >
+                              {assignment.target === "NEEDS_PRACTICE"
+                                ? "Practice group"
+                                : "Whole class"}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            {assignment.learnerIds.length > 0 && (
+                              <span>{assignment.learnerIds.length} learner(s)</span>
+                            )}
+                            {assignment.note && <span>{assignment.note}</span>}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
 
                 <div className="grid gap-3 lg:grid-cols-3">
                   {(Object.keys(STATUS_META) as LearnerProgressStatus[]).map((status) => (
@@ -1233,6 +1344,41 @@ export default function TeacherWorkspaceClient({
             </header>
 
             {readOnlyAlignmentPanel}
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Mission assignments
+                </p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">
+                  {workspace.assignmentAnalytics.totalAssignments}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Assigned classes
+                </p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">
+                  {workspace.assignmentAnalytics.assignedClassCount}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Practice group
+                </p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">
+                  {workspace.assignmentAnalytics.byTarget.NEEDS_PRACTICE}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Last 24h
+                </p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">
+                  {workspace.assignmentAnalytics.recentAssignments24h}
+                </p>
+              </div>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-[220px_1fr]">
               <div className="rounded-2xl border border-slate-100 bg-white p-4">

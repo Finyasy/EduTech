@@ -28,7 +28,7 @@ export default async function QuizPage({ params }: QuizPageProps) {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <SiteHeader />
+      <SiteHeader withAuth={false} />
       <main className="mx-auto w-full max-w-4xl px-6 pb-16 pt-10">
         <header className="mb-8 space-y-3">
           <Link

@@ -1,10 +1,18 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { getPrisma } from "@/lib/server/prisma";
+import {
+  clearScopeDegraded,
+  isScopeDegraded,
+  markScopeDegraded,
+} from "@/lib/server/degraded-mode";
 import type {
   LearnerProgressStatus,
+  TeacherAssignmentAnalytics,
   TeacherActivity,
   TeacherClassroom,
   TeacherLearner,
+  TeacherMissionAssignment,
   TeacherSchoolSettings,
   TeacherStrand,
   TeacherSubject,
@@ -39,7 +47,42 @@ type AddLearnerInput = {
   name: string;
 };
 
+type TeacherAssignmentAnalyticsFilters = {
+  ownerKey?: string;
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
+  classId?: string;
+  target?: "CLASS" | "NEEDS_PRACTICE";
+};
+
+export type TeacherAssignmentAnalyticsReport = {
+  filters: {
+    ownerKey: string | null;
+    classId: string | null;
+    target: "CLASS" | "NEEDS_PRACTICE" | null;
+    dateFrom: string | null;
+    dateTo: string | null;
+  };
+  summary: TeacherAssignmentAnalytics;
+  byClass: Array<{
+    classId: string;
+    className: string;
+    totalAssignments: number;
+    practiceAssignments: number;
+    classAssignments: number;
+  }>;
+  byDay: Array<{
+    date: string;
+    totalAssignments: number;
+    practiceAssignments: number;
+    classAssignments: number;
+  }>;
+};
+
 const TEACHER_WORKSPACE_QUERY_TIMEOUT_MS = 800;
+const TEACHER_WORKSPACE_CACHE_TTL_MS = 5_000;
+const TEACHER_WORKSPACE_DEGRADED_SCOPE = "teacher-workspace";
+const ENABLE_WORKSPACE_CACHE = process.env.NODE_ENV !== "test";
 
 const withTeacherWorkspaceTimeout = <T,>(promise: Promise<T>) =>
   Promise.race<T>([
@@ -241,14 +284,60 @@ type MemoryWorkspace = {
   classes: TeacherClassroom[];
   learners: TeacherLearner[];
   sessionStatuses: Record<string, Record<string, LearnerProgressStatus>>;
+  assignments: TeacherMissionAssignment[];
   idCounter: number;
 };
 
 const memoryStore = new Map<string, MemoryWorkspace>();
+const workspaceSnapshotCache = new Map<
+  string,
+  { expiresAt: number; value: TeacherWorkspaceSnapshot }
+>();
 
 const hasPersistentStore = () => Boolean(process.env.DATABASE_URL && getPrisma());
 
 const nowIso = () => new Date().toISOString();
+
+const workspaceSnapshotCacheKey = (query: WorkspaceQuery) =>
+  [
+    query.ownerKey,
+    query.classId ?? "",
+    query.subjectId ?? "",
+    query.strandId ?? "",
+    query.activityId ?? "",
+  ].join("::");
+
+const readWorkspaceSnapshotCache = (query: WorkspaceQuery) => {
+  if (!ENABLE_WORKSPACE_CACHE) return null;
+  const key = workspaceSnapshotCacheKey(query);
+  const entry = workspaceSnapshotCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    workspaceSnapshotCache.delete(key);
+    return null;
+  }
+  return entry.value;
+};
+
+const writeWorkspaceSnapshotCache = (
+  query: WorkspaceQuery,
+  value: TeacherWorkspaceSnapshot,
+) => {
+  if (!ENABLE_WORKSPACE_CACHE) return;
+  workspaceSnapshotCache.set(workspaceSnapshotCacheKey(query), {
+    value,
+    expiresAt: Date.now() + TEACHER_WORKSPACE_CACHE_TTL_MS,
+  });
+};
+
+const invalidateWorkspaceSnapshotCache = (ownerKey: string) => {
+  if (!ENABLE_WORKSPACE_CACHE) return;
+  for (const key of workspaceSnapshotCache.keys()) {
+    if (key.startsWith(`${ownerKey}::`)) {
+      workspaceSnapshotCache.delete(key);
+    }
+  }
+};
 
 const toIso = (value: Date | string) =>
   value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -332,6 +421,27 @@ const seededLearners = (classId: string): TeacherLearner[] => [
 const createMemoryWorkspace = (ownerKey: string): MemoryWorkspace => {
   const createdAt = nowIso();
   const activeClassId = `class-${ownerKey}-pp1`;
+  const initialActivityId = FIRST_ACTIVITY_ID;
+  const seededAssignments: TeacherMissionAssignment[] = initialActivityId
+    ? [
+        {
+          id: `assignment-${ownerKey}-welcome`,
+          classId: activeClassId,
+          courseId: "course-logic",
+          courseTitle: "AI Pattern Detectives",
+          target: "CLASS",
+          subjectId: "subject-math",
+          strandId: "strand-pre-number",
+          activityId: initialActivityId,
+          learnerIds: [],
+          note: "Starter mission aligned to pre-number sorting.",
+          status: "ASSIGNED",
+          createdAt,
+          updatedAt: createdAt,
+          isFallbackData: true,
+        },
+      ]
+    : [];
 
   return {
     school: ensureSchoolSettings(ownerKey),
@@ -383,6 +493,7 @@ const createMemoryWorkspace = (ownerKey: string): MemoryWorkspace => {
     ],
     learners: seededLearners(activeClassId),
     sessionStatuses: {},
+    assignments: seededAssignments,
     idCounter: 3000,
   };
 };
@@ -492,6 +603,116 @@ const computeUsage = (learners: TeacherLearner[]) => {
   };
 };
 
+const emptyAssignmentAnalytics = (): TeacherAssignmentAnalytics => ({
+  totalAssignments: 0,
+  recentAssignments24h: 0,
+  assignedClassCount: 0,
+  byTarget: {
+    CLASS: 0,
+    NEEDS_PRACTICE: 0,
+  },
+  byStatus: {
+    ASSIGNED: 0,
+    IN_PROGRESS: 0,
+    COMPLETED: 0,
+  },
+});
+
+const computeAssignmentAnalytics = (
+  assignments: TeacherMissionAssignment[],
+): TeacherAssignmentAnalytics => {
+  if (assignments.length === 0) {
+    return emptyAssignmentAnalytics();
+  }
+
+  const summary = emptyAssignmentAnalytics();
+  const activeClassIds = new Set<string>();
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+
+  assignments.forEach((assignment) => {
+    summary.totalAssignments += 1;
+    activeClassIds.add(assignment.classId);
+    if (Date.parse(assignment.createdAt) >= cutoff) {
+      summary.recentAssignments24h += 1;
+    }
+    if (assignment.target === "NEEDS_PRACTICE") {
+      summary.byTarget.NEEDS_PRACTICE += 1;
+    } else {
+      summary.byTarget.CLASS += 1;
+    }
+
+    if (assignment.status === "IN_PROGRESS") {
+      summary.byStatus.IN_PROGRESS += 1;
+    } else if (assignment.status === "COMPLETED") {
+      summary.byStatus.COMPLETED += 1;
+    } else {
+      summary.byStatus.ASSIGNED += 1;
+    }
+  });
+
+  summary.assignedClassCount = activeClassIds.size;
+  return summary;
+};
+
+const assignmentDedupeKey = (input: {
+  ownerKey: string;
+  classId: string;
+  courseId: string;
+  target: "CLASS" | "NEEDS_PRACTICE";
+  activityId?: string | null;
+}) =>
+  [
+    input.ownerKey,
+    input.classId,
+    input.courseId,
+    input.target,
+    input.activityId ?? "none",
+  ].join("::");
+
+type TeacherMissionAssignmentDbRow = {
+  id: string;
+  ownerKey: string;
+  classId: string;
+  courseId: string;
+  courseTitle: string;
+  target: string;
+  subjectId: string | null;
+  strandId: string | null;
+  activityId: string | null;
+  learnerIds: unknown;
+  note: string | null;
+  status: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+type TeacherMissionAssignmentDbRowWithClass = TeacherMissionAssignmentDbRow & {
+  className: string | null;
+};
+
+const mapTeacherMissionAssignmentFromDb = (
+  row: TeacherMissionAssignmentDbRow,
+): TeacherMissionAssignment => ({
+  id: row.id,
+  classId: row.classId,
+  courseId: row.courseId,
+  courseTitle: row.courseTitle,
+  target: row.target === "NEEDS_PRACTICE" ? "NEEDS_PRACTICE" : "CLASS",
+  subjectId: row.subjectId,
+  strandId: row.strandId,
+  activityId: row.activityId,
+  learnerIds: Array.isArray(row.learnerIds)
+    ? row.learnerIds.filter((item): item is string => typeof item === "string")
+    : [],
+  note: row.note,
+  status:
+    row.status === "IN_PROGRESS" || row.status === "COMPLETED"
+      ? row.status
+      : "ASSIGNED",
+  createdAt: toIso(row.createdAt),
+  updatedAt: toIso(row.updatedAt),
+});
+
 const mapSchoolFromDb = (profile: {
   schoolName: string;
   country: string;
@@ -580,6 +801,162 @@ async function ensureSchoolProfile(ownerKey: string) {
   return mapSchoolFromDb(profile);
 }
 
+async function listTeacherMissionAssignmentsFromDatabase(
+  ownerKey: string,
+): Promise<TeacherMissionAssignment[]> {
+  const prisma = getPrisma();
+  if (!prisma) {
+    return getMemoryWorkspace(ownerKey).assignments;
+  }
+
+  const rows = await prisma.$queryRaw<TeacherMissionAssignmentDbRow[]>`
+    SELECT
+      "id",
+      "ownerKey",
+      "classId",
+      "courseId",
+      "courseTitle",
+      "target",
+      "subjectId",
+      "strandId",
+      "activityId",
+      "learnerIds",
+      "note",
+      "status",
+      "createdAt",
+      "updatedAt"
+    FROM "TeacherMissionAssignment"
+    WHERE "ownerKey" = ${ownerKey}
+    ORDER BY "updatedAt" DESC
+    LIMIT 200;
+  `;
+
+  return rows.map(mapTeacherMissionAssignmentFromDb);
+}
+
+async function listTeacherMissionAssignmentsWithClassFromDatabase(input: {
+  ownerKey?: string;
+}): Promise<TeacherMissionAssignmentDbRowWithClass[]> {
+  const prisma = getPrisma();
+  if (!prisma) {
+    return [];
+  }
+
+  const ownerKeyFilter = input.ownerKey ?? "";
+  return prisma.$queryRaw<TeacherMissionAssignmentDbRowWithClass[]>`
+    SELECT
+      tma."id",
+      tma."ownerKey",
+      tma."classId",
+      tma."courseId",
+      tma."courseTitle",
+      tma."target",
+      tma."subjectId",
+      tma."strandId",
+      tma."activityId",
+      tma."learnerIds",
+      tma."note",
+      tma."status",
+      tma."createdAt",
+      tma."updatedAt",
+      tc."name" AS "className"
+    FROM "TeacherMissionAssignment" tma
+    LEFT JOIN "TeacherClassroom" tc ON tc."id" = tma."classId"
+    WHERE (${ownerKeyFilter} = '' OR tma."ownerKey" = ${ownerKeyFilter})
+    ORDER BY tma."createdAt" DESC
+    LIMIT 5000;
+  `;
+}
+
+async function upsertTeacherMissionAssignmentDatabase(input: {
+  ownerKey: string;
+  classId: string;
+  courseId: string;
+  courseTitle: string;
+  target: "CLASS" | "NEEDS_PRACTICE";
+  subjectId?: string | null;
+  strandId?: string | null;
+  activityId?: string | null;
+  learnerIds?: string[];
+  note?: string | null;
+}): Promise<TeacherMissionAssignment> {
+  const prisma = getPrisma();
+  if (!prisma) {
+    return upsertTeacherMissionAssignmentMemory(input);
+  }
+
+  const learnerIds = Array.from(new Set(input.learnerIds ?? []));
+  const dedupeKey = assignmentDedupeKey(input);
+  const id = randomUUID();
+
+  const rows = await prisma.$queryRaw<TeacherMissionAssignmentDbRow[]>`
+    INSERT INTO "TeacherMissionAssignment" (
+      "id",
+      "ownerKey",
+      "classId",
+      "dedupeKey",
+      "courseId",
+      "courseTitle",
+      "target",
+      "subjectId",
+      "strandId",
+      "activityId",
+      "learnerIds",
+      "note",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ) VALUES (
+      ${id},
+      ${input.ownerKey},
+      ${input.classId},
+      ${dedupeKey},
+      ${input.courseId},
+      ${input.courseTitle},
+      ${input.target},
+      ${input.subjectId ?? null},
+      ${input.strandId ?? null},
+      ${input.activityId ?? null},
+      CAST(${JSON.stringify(learnerIds)} AS JSONB),
+      ${input.note ?? null},
+      ${"ASSIGNED"},
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT ("dedupeKey") DO UPDATE
+    SET
+      "courseTitle" = EXCLUDED."courseTitle",
+      "subjectId" = EXCLUDED."subjectId",
+      "strandId" = EXCLUDED."strandId",
+      "activityId" = EXCLUDED."activityId",
+      "learnerIds" = EXCLUDED."learnerIds",
+      "note" = EXCLUDED."note",
+      "status" = 'ASSIGNED',
+      "updatedAt" = NOW()
+    RETURNING
+      "id",
+      "ownerKey",
+      "classId",
+      "courseId",
+      "courseTitle",
+      "target",
+      "subjectId",
+      "strandId",
+      "activityId",
+      "learnerIds",
+      "note",
+      "status",
+      "createdAt",
+      "updatedAt";
+  `;
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error("Unable to save mission assignment.");
+  }
+  return mapTeacherMissionAssignmentFromDb(row);
+}
+
 async function getWorkspaceFromMemory(query: WorkspaceQuery): Promise<TeacherWorkspaceSnapshot> {
   const workspace = getMemoryWorkspace(query.ownerKey);
   const classes = workspace.classes.filter((item) => !item.isArchived);
@@ -627,6 +1004,8 @@ async function getWorkspaceFromMemory(query: WorkspaceQuery): Promise<TeacherWor
       lastWeekMinutes: usage.lastWeekMinutes,
     },
     learnerUsage: usage.learnerUsage,
+    assignments: workspace.assignments,
+    assignmentAnalytics: computeAssignmentAnalytics(workspace.assignments),
   };
 }
 
@@ -686,6 +1065,16 @@ async function getWorkspaceFromDatabase(
 
   const sessionStatuses = buildSessionStatusMap(learners, rawStatuses);
   const usage = computeUsage(learners);
+  let assignments: TeacherMissionAssignment[];
+  try {
+    assignments = await listTeacherMissionAssignmentsFromDatabase(query.ownerKey);
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      assignments = getMemoryWorkspace(query.ownerKey).assignments;
+    } else {
+      throw error;
+    }
+  }
 
   return {
     isFallbackData: false,
@@ -704,20 +1093,44 @@ async function getWorkspaceFromDatabase(
       lastWeekMinutes: usage.lastWeekMinutes,
     },
     learnerUsage: usage.learnerUsage,
+    assignments,
+    assignmentAnalytics: computeAssignmentAnalytics(assignments),
   };
 }
 
 export async function getTeacherWorkspaceSnapshot(
   query: WorkspaceQuery,
 ): Promise<TeacherWorkspaceSnapshot> {
+  const cached = readWorkspaceSnapshotCache(query);
+  if (cached) {
+    return cached;
+  }
+
   if (!hasPersistentStore()) {
-    return getWorkspaceFromMemory(query);
+    const snapshot = await getWorkspaceFromMemory(query);
+    writeWorkspaceSnapshotCache(query, snapshot);
+    return snapshot;
+  }
+
+  if (process.env.NODE_ENV !== "test" && isScopeDegraded(TEACHER_WORKSPACE_DEGRADED_SCOPE)) {
+    const snapshot = await getWorkspaceFromMemory(query);
+    writeWorkspaceSnapshotCache(query, snapshot);
+    return snapshot;
   }
   try {
-    return await withTeacherWorkspaceTimeout(getWorkspaceFromDatabase(query));
+    const snapshot = await withTeacherWorkspaceTimeout(getWorkspaceFromDatabase(query));
+    clearScopeDegraded(TEACHER_WORKSPACE_DEGRADED_SCOPE);
+    writeWorkspaceSnapshotCache(query, snapshot);
+    return snapshot;
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
-      return getWorkspaceFromMemory(query);
+      markScopeDegraded(
+        TEACHER_WORKSPACE_DEGRADED_SCOPE,
+        error instanceof Error ? error.message : "teacher-workspace-db-failure",
+      );
+      const snapshot = await getWorkspaceFromMemory(query);
+      writeWorkspaceSnapshotCache(query, snapshot);
+      return snapshot;
     }
     throw error;
   }
@@ -898,6 +1311,69 @@ const advanceLearnerProgressStatusMemory = (input: {
   return next;
 };
 
+const upsertTeacherMissionAssignmentMemory = (input: {
+  ownerKey: string;
+  classId: string;
+  courseId: string;
+  courseTitle: string;
+  target: "CLASS" | "NEEDS_PRACTICE";
+  subjectId?: string | null;
+  strandId?: string | null;
+  activityId?: string | null;
+  learnerIds?: string[];
+  note?: string | null;
+}) => {
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    throw new Error("Class not found.");
+  }
+
+  const now = nowIso();
+  const normalizedLearnerIds = Array.from(new Set(input.learnerIds ?? []));
+  const existing = workspace.assignments.find(
+    (assignment) =>
+      assignment.classId === input.classId &&
+      assignment.courseId === input.courseId &&
+      assignment.target === input.target &&
+      assignment.activityId === (input.activityId ?? null) &&
+      assignment.status !== "COMPLETED",
+  );
+
+  if (existing) {
+    existing.courseTitle = input.courseTitle;
+    existing.subjectId = input.subjectId ?? null;
+    existing.strandId = input.strandId ?? null;
+    existing.activityId = input.activityId ?? null;
+    existing.learnerIds = normalizedLearnerIds;
+    existing.note = input.note ?? null;
+    existing.updatedAt = now;
+    existing.isFallbackData = true;
+    return existing;
+  }
+
+  const assignment: TeacherMissionAssignment = {
+    id: nextMemoryId(workspace, "assignment"),
+    classId: input.classId,
+    courseId: input.courseId,
+    courseTitle: input.courseTitle,
+    target: input.target,
+    subjectId: input.subjectId ?? null,
+    strandId: input.strandId ?? null,
+    activityId: input.activityId ?? null,
+    learnerIds: normalizedLearnerIds,
+    note: input.note ?? null,
+    status: "ASSIGNED",
+    createdAt: now,
+    updatedAt: now,
+    isFallbackData: true,
+  };
+  workspace.assignments.unshift(assignment);
+  return assignment;
+};
+
 export async function addTeacherClassroom(
   ownerKey: string,
   input: AddClassInput,
@@ -905,7 +1381,9 @@ export async function addTeacherClassroom(
   const validated = validateClassInput(input);
 
   if (!hasPersistentStore()) {
-    return addTeacherClassroomMemory(ownerKey, validated);
+    const classroom = addTeacherClassroomMemory(ownerKey, validated);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return classroom;
   }
 
   try {
@@ -924,10 +1402,14 @@ export async function addTeacherClassroom(
       },
     });
 
-    return mapClassroomFromDb(classroom);
+    const mapped = mapClassroomFromDb(classroom);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return mapped;
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
-      return addTeacherClassroomMemory(ownerKey, validated);
+      const classroom = addTeacherClassroomMemory(ownerKey, validated);
+      invalidateWorkspaceSnapshotCache(ownerKey);
+      return classroom;
     }
     throw error;
   }
@@ -941,7 +1423,9 @@ export async function updateTeacherClassroom(
   const validated = validateClassUpdate(input);
 
   if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
-    return updateTeacherClassroomMemory(ownerKey, classId, validated);
+    const classroom = updateTeacherClassroomMemory(ownerKey, classId, validated);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return classroom;
   }
 
   try {
@@ -965,13 +1449,17 @@ export async function updateTeacherClassroom(
       },
     });
 
-    return mapClassroomFromDb(classroom);
+    const mapped = mapClassroomFromDb(classroom);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return mapped;
   } catch (error) {
     if (
       shouldFallbackToMemory(error) ||
       shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
     ) {
-      return updateTeacherClassroomMemory(ownerKey, classId, validated);
+      const classroom = updateTeacherClassroomMemory(ownerKey, classId, validated);
+      invalidateWorkspaceSnapshotCache(ownerKey);
+      return classroom;
     }
     throw error;
   }
@@ -983,7 +1471,9 @@ async function setClassArchivedState(
   isArchived: boolean,
 ): Promise<TeacherClassroom> {
   if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
-    return setClassArchivedStateMemory(ownerKey, classId, isArchived);
+    const classroom = setClassArchivedStateMemory(ownerKey, classId, isArchived);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return classroom;
   }
 
   try {
@@ -1005,13 +1495,17 @@ async function setClassArchivedState(
       throw new Error("Class not found.");
     }
 
-    return mapClassroomFromDb(classroom);
+    const mapped = mapClassroomFromDb(classroom);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return mapped;
   } catch (error) {
     if (
       shouldFallbackToMemory(error) ||
       shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
     ) {
-      return setClassArchivedStateMemory(ownerKey, classId, isArchived);
+      const classroom = setClassArchivedStateMemory(ownerKey, classId, isArchived);
+      invalidateWorkspaceSnapshotCache(ownerKey);
+      return classroom;
     }
     throw error;
   }
@@ -1040,7 +1534,9 @@ export async function addTeacherLearner(
     .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
-    return addTeacherLearnerMemory(ownerKey, classId, name);
+    const learner = addTeacherLearnerMemory(ownerKey, classId, name);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return learner;
   }
 
   try {
@@ -1064,13 +1560,17 @@ export async function addTeacherLearner(
       },
     });
 
-    return mapLearnerFromDb(learner);
+    const mapped = mapLearnerFromDb(learner);
+    invalidateWorkspaceSnapshotCache(ownerKey);
+    return mapped;
   } catch (error) {
     if (
       shouldFallbackToMemory(error) ||
       shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
     ) {
-      return addTeacherLearnerMemory(ownerKey, classId, name);
+      const learner = addTeacherLearnerMemory(ownerKey, classId, name);
+      invalidateWorkspaceSnapshotCache(ownerKey);
+      return learner;
     }
     throw error;
   }
@@ -1090,7 +1590,9 @@ export async function advanceLearnerProgressStatus(input: {
     !hasPersistentStore() ||
     isSeededMemoryClassId(input.ownerKey, input.classId)
   ) {
-    return advanceLearnerProgressStatusMemory(input);
+    const status = advanceLearnerProgressStatusMemory(input);
+    invalidateWorkspaceSnapshotCache(input.ownerKey);
+    return status;
   }
 
   try {
@@ -1146,6 +1648,7 @@ export async function advanceLearnerProgressStatus(input: {
       },
     });
 
+    invalidateWorkspaceSnapshotCache(input.ownerKey);
     return next;
   } catch (error) {
     if (
@@ -1157,8 +1660,210 @@ export async function advanceLearnerProgressStatus(input: {
         learnerId: input.learnerId,
       })
     ) {
-      return advanceLearnerProgressStatusMemory(input);
+      const status = advanceLearnerProgressStatusMemory(input);
+      invalidateWorkspaceSnapshotCache(input.ownerKey);
+      return status;
     }
+    throw error;
+  }
+}
+
+export async function getTeacherAssignmentAnalyticsReport(
+  filters: TeacherAssignmentAnalyticsFilters,
+): Promise<TeacherAssignmentAnalyticsReport> {
+  const dateFrom = filters.dateFrom ?? null;
+  const dateTo = filters.dateTo ?? null;
+
+  const includeByDate = (createdAt: string) => {
+    const timestamp = Date.parse(createdAt);
+    if (Number.isNaN(timestamp)) return false;
+    if (dateFrom && timestamp < dateFrom.getTime()) return false;
+    if (dateTo && timestamp > dateTo.getTime()) return false;
+    return true;
+  };
+
+  type AssignmentWithClass = {
+    assignment: TeacherMissionAssignment;
+    className: string;
+  };
+
+  let rows: AssignmentWithClass[] = [];
+
+  if (hasPersistentStore()) {
+    try {
+      const dbRows = await listTeacherMissionAssignmentsWithClassFromDatabase({
+        ownerKey: filters.ownerKey,
+      });
+      rows = dbRows
+        .map((row) => ({
+          assignment: mapTeacherMissionAssignmentFromDb(row),
+          className: row.className ?? "Unknown class",
+        }))
+        .filter(({ assignment }) => {
+          if (filters.classId && assignment.classId !== filters.classId) return false;
+          if (filters.target && assignment.target !== filters.target) return false;
+          return includeByDate(assignment.createdAt);
+        });
+    } catch (error) {
+      if (!shouldFallbackToMemory(error)) {
+        throw error;
+      }
+      console.warn(
+        `[teacher-assignments] analytics report falling back to memory reason=${
+          error instanceof Error ? error.message : "unknown"
+        }`,
+      );
+    }
+  }
+
+  if (rows.length === 0) {
+    const owners = filters.ownerKey
+      ? [filters.ownerKey]
+      : Array.from(memoryStore.keys());
+    rows = owners.flatMap((ownerKey) => {
+      const workspace = getMemoryWorkspace(ownerKey);
+      const classNameMap = new Map(
+        workspace.classes.map((classroom) => [classroom.id, classroom.name]),
+      );
+      return workspace.assignments
+        .filter((assignment) => {
+          if (filters.classId && assignment.classId !== filters.classId) return false;
+          if (filters.target && assignment.target !== filters.target) return false;
+          return includeByDate(assignment.createdAt);
+        })
+        .map((assignment) => ({
+          assignment,
+          className: classNameMap.get(assignment.classId) ?? "Unknown class",
+        }));
+    });
+  }
+
+  const assignments = rows.map((row) => row.assignment);
+  const summary = computeAssignmentAnalytics(assignments);
+
+  const classAgg = new Map<
+    string,
+    {
+      classId: string;
+      className: string;
+      totalAssignments: number;
+      practiceAssignments: number;
+      classAssignments: number;
+    }
+  >();
+
+  const dayAgg = new Map<
+    string,
+    { date: string; totalAssignments: number; practiceAssignments: number; classAssignments: number }
+  >();
+
+  rows.forEach(({ assignment, className }) => {
+    const classCurrent = classAgg.get(assignment.classId) ?? {
+      classId: assignment.classId,
+      className,
+      totalAssignments: 0,
+      practiceAssignments: 0,
+      classAssignments: 0,
+    };
+    classCurrent.totalAssignments += 1;
+    if (assignment.target === "NEEDS_PRACTICE") {
+      classCurrent.practiceAssignments += 1;
+    } else {
+      classCurrent.classAssignments += 1;
+    }
+    classAgg.set(assignment.classId, classCurrent);
+
+    const date = assignment.createdAt.slice(0, 10);
+    const dayCurrent = dayAgg.get(date) ?? {
+      date,
+      totalAssignments: 0,
+      practiceAssignments: 0,
+      classAssignments: 0,
+    };
+    dayCurrent.totalAssignments += 1;
+    if (assignment.target === "NEEDS_PRACTICE") {
+      dayCurrent.practiceAssignments += 1;
+    } else {
+      dayCurrent.classAssignments += 1;
+    }
+    dayAgg.set(date, dayCurrent);
+  });
+
+  return {
+    filters: {
+      ownerKey: filters.ownerKey ?? null,
+      classId: filters.classId ?? null,
+      target: filters.target ?? null,
+      dateFrom: dateFrom ? dateFrom.toISOString() : null,
+      dateTo: dateTo ? dateTo.toISOString() : null,
+    },
+    summary,
+    byClass: Array.from(classAgg.values()).sort(
+      (a, b) => b.totalAssignments - a.totalAssignments,
+    ),
+    byDay: Array.from(dayAgg.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    ),
+  };
+}
+
+export async function assignTeacherMissionToClass(input: {
+  ownerKey: string;
+  classId: string;
+  courseId: string;
+  courseTitle: string;
+  target: "CLASS" | "NEEDS_PRACTICE";
+  subjectId?: string | null;
+  strandId?: string | null;
+  activityId?: string | null;
+  learnerIds?: string[];
+  note?: string | null;
+}): Promise<TeacherMissionAssignment> {
+  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+    const assignment = upsertTeacherMissionAssignmentMemory(input);
+    invalidateWorkspaceSnapshotCache(input.ownerKey);
+    return assignment;
+  }
+
+  try {
+    const prisma = getPrisma()!;
+    const classroom = await prisma.teacherClassroom.findFirst({
+      where: {
+        id: input.classId,
+        ownerKey: input.ownerKey,
+        isArchived: false,
+      },
+      select: { id: true },
+    });
+    if (!classroom) {
+      throw new Error("Class not found.");
+    }
+
+    const assignment = await upsertTeacherMissionAssignmentDatabase(input);
+    invalidateWorkspaceSnapshotCache(input.ownerKey);
+    return assignment;
+  } catch (error) {
+    if (
+      shouldFallbackToMemory(error) ||
+      shouldFallbackToMemoryEntityNotFound({
+        error,
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+      })
+    ) {
+      console.warn(
+        `[teacher-assignments] db persistence unavailable, using memory fallback owner=${input.ownerKey} classId=${input.classId} reason=${
+          error instanceof Error ? error.message : "unknown"
+        }`,
+      );
+      const assignment = upsertTeacherMissionAssignmentMemory(input);
+      invalidateWorkspaceSnapshotCache(input.ownerKey);
+      return assignment;
+    }
+    console.error(
+      `[teacher-assignments] failed to persist assignment owner=${input.ownerKey} classId=${input.classId}`,
+      error,
+    );
     throw error;
   }
 }

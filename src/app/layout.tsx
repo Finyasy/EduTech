@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { logRuntimeReadinessWarningsOnce } from "@/lib/server/runtime-readiness";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  logRuntimeReadinessWarningsOnce();
   const content = <LayoutContent>{children}</LayoutContent>;
   return <ClerkProvider>{content}</ClerkProvider>;
 }
