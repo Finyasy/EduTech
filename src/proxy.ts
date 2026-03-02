@@ -14,7 +14,7 @@ const isClerkConfigured = Boolean(
 const clerk = clerkMiddleware();
 
 export default function proxy(req: NextRequest, event: NextFetchEvent) {
-  if (!isClerkConfigured || req.nextUrl.pathname === "/api/health") {
+  if (!isClerkConfigured || req.nextUrl.pathname.startsWith("/api/health")) {
     return NextResponse.next();
   }
 

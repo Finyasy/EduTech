@@ -49,6 +49,8 @@ MIGRATE_DATABASE_URL="postgresql://USER:PASSWORD@DIRECT_HOST:5432/DB"
 
 # Clerk (required for auth UI)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
+CLERK_SECRET_KEY="sk_..."
+NEXT_PUBLIC_APP_URL="https://your-domain.vercel.app"
 
 # Comma-separated list of admin emails
 ADMIN_EMAILS="admin@example.com,other@example.com"
@@ -92,6 +94,9 @@ Open `http://localhost:3000`.
 - `pnpm prisma:migrate` — run migrations
 - `pnpm prisma:studio` — open Prisma Studio
 - `pnpm db:seed` — seed the database
+- `pnpm readiness:check` — verify production env and deployment readiness
+- `pnpm readiness:check:strict` — strict readiness gate (fails on warnings)
+- `pnpm release:verify` — typecheck, unit tests, and production build
 
 ## Project structure
 
@@ -100,6 +105,24 @@ Open `http://localhost:3000`.
 - `src/lib` — server helpers and utilities
 - `prisma` — schema, migrations, and seed script
 - `public` — static assets
+
+## Vercel Deployment
+
+1. Set production environment variables in Vercel:
+   - `DATABASE_URL` (pooled runtime URL)
+   - `DIRECT_URL` (direct Neon URL) or `MIGRATE_DATABASE_URL`
+   - `NEXT_PUBLIC_APP_URL` (your production URL)
+   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_live_*`)
+   - `CLERK_SECRET_KEY` (`sk_live_*`)
+   - `ADMIN_EMAILS`, `TEACHER_EMAILS`
+2. Run migrations with direct DB connection before or during deploy:
+   - `MIGRATE_DATABASE_URL='postgresql://...' pnpm migrate:deploy:direct`
+3. Run release gates locally or in CI:
+   - `pnpm release:verify`
+   - `pnpm readiness:check:strict`
+4. Verify runtime health after deploy:
+   - `/api/health` (liveness)
+   - `/api/health/ready` (config + DB readiness)
 
 ## License
 
