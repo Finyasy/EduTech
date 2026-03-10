@@ -50,15 +50,39 @@ const fallbackRedirectUrl = "/post-auth";
 
 const clerkAppearance = {
   elements: {
-    card: "rounded-3xl border border-white/70 bg-white/90 shadow-xl",
+    rootBox: "w-full",
+    card: "w-full rounded-[1.8rem] border-0 bg-transparent p-0 shadow-none",
+    headerTitle:
+      "text-[2rem] font-semibold tracking-[-0.03em] text-slate-950",
+    headerSubtitle: "text-sm leading-7 text-slate-600",
+    socialButtonsBlock:
+      "gap-3 border-b border-slate-200/80 pb-5",
     socialButtonsBlockButton:
-      "min-h-11 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50",
+      "min-h-11 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-700 shadow-[0_12px_24px_rgba(15,23,42,0.06)] hover:bg-slate-50",
     socialButtonsBlockButtonText: "text-sm font-medium",
+    dividerLine: "bg-slate-200",
+    dividerText:
+      "bg-transparent px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400",
+    formFieldLabel:
+      "mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500",
     formButtonPrimary:
-      "min-h-11 rounded-xl bg-slate-800 text-sm font-semibold hover:bg-slate-900",
+      "mt-2 min-h-12 rounded-2xl bg-slate-950 text-sm font-semibold shadow-[0_18px_36px_rgba(15,23,42,0.16)] hover:bg-slate-800",
     formFieldInput:
-      "min-h-11 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 shadow-none focus-visible:ring-2 focus-visible:ring-orange-300",
+      "min-h-12 rounded-2xl border border-slate-200 bg-white text-sm text-slate-900 shadow-none transition focus-visible:ring-2 focus-visible:ring-sky-200",
+    formFieldInputShowPasswordButton:
+      "text-slate-500 hover:text-slate-700",
+    formFieldAction: "font-semibold text-sky-700 hover:text-sky-800",
+    footer: "border-t border-slate-200/80 pt-5",
+    footerActionText: "text-sm text-slate-600",
     footerActionLink: "font-semibold text-orange-700 hover:text-orange-800",
+    identityPreviewText: "text-sm text-slate-700",
+    identityPreviewEditButton:
+      "font-semibold text-sky-700 hover:text-sky-800",
+    alert:
+      "rounded-2xl border border-amber-200 bg-amber-50 text-amber-900",
+    alertText: "text-sm text-amber-900",
+    otpCodeFieldInput:
+      "h-12 w-12 rounded-2xl border border-slate-200 text-slate-950 shadow-none focus-visible:ring-2 focus-visible:ring-sky-200",
     ...(disableSocial
       ? {
           socialButtonsBlock: "hidden",
