@@ -1,5 +1,11 @@
 # Production Readiness Checklist (Vercel)
 
+## 0. Vercel Project Settings
+- Import the GitHub repo into Vercel with the `Next.js` framework preset.
+- The repo-level Vercel build command is pinned in `vercel.json`:
+  - `pnpm vercel-build`
+- `pnpm vercel-build` runs `pnpm prisma:generate` before `pnpm build` so Prisma client generation stays explicit in Vercel builds.
+
 ## 1. Environment and Secrets
 - Configure these Vercel Production env vars:
   - `DATABASE_URL` (pooled runtime URL)
@@ -8,6 +14,8 @@
   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_live_*`)
   - `CLERK_SECRET_KEY` (`sk_live_*`)
   - `ADMIN_EMAILS`, `TEACHER_EMAILS`
+- Configure matching Preview env vars if you use preview deployments.
+- Use a separate preview database if preview deployments will touch Prisma migrations.
 - Confirm Clerk redirect/callback URLs include:
   - `/sign-in`
   - `/post-auth`
@@ -23,6 +31,7 @@
 
 ## 3. Build and Test Release Gates
 - Required gates before deploy:
+  - `pnpm vercel-build` (Vercel-equivalent production build path)
   - `pnpm release:verify` (typecheck + unit tests + production build)
   - `pnpm readiness:check:strict` (strict env and config validation)
 - Optional but recommended:
