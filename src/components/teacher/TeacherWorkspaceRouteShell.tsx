@@ -36,7 +36,7 @@ export default function TeacherWorkspaceRouteShell({
     setError(null);
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3500);
+    const timer = setTimeout(() => controller.abort(), 5000);
 
     try {
       const query = initialQueryRef.current;

@@ -79,7 +79,7 @@ export type TeacherAssignmentAnalyticsReport = {
   }>;
 };
 
-const TEACHER_WORKSPACE_QUERY_TIMEOUT_MS = 800;
+const TEACHER_WORKSPACE_QUERY_TIMEOUT_MS = 4_000;
 const TEACHER_WORKSPACE_CACHE_TTL_MS = 5_000;
 const TEACHER_WORKSPACE_DEGRADED_SCOPE = "teacher-workspace";
 const ENABLE_WORKSPACE_CACHE = process.env.NODE_ENV !== "test";
