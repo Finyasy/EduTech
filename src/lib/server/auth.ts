@@ -1,5 +1,6 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { unstable_cache } from "next/cache";
+import { isClerkPublishableKeyConfigured } from "@/lib/auth/post-auth-routing";
 import { getPrisma } from "@/lib/server/prisma";
 
 const parseEmailList = (rawList: string) =>
@@ -13,6 +14,33 @@ const parseAdminEmails = () =>
 
 const parseTeacherEmails = () =>
   parseEmailList(process.env.TEACHER_EMAILS ?? "");
+
+export type AuthState =
+  | { status: "disabled"; userId: null }
+  | { status: "timed_out"; userId: null }
+  | { status: "unauthenticated"; userId: null }
+  | { status: "authenticated"; userId: string };
+
+export async function getAuthStateWithTimeout(timeoutMs: number): Promise<AuthState> {
+  if (!isClerkPublishableKeyConfigured(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)) {
+    return { status: "disabled", userId: null };
+  }
+
+  try {
+    return await Promise.race<AuthState>([
+      auth().then(({ userId }) =>
+        userId
+          ? { status: "authenticated", userId }
+          : { status: "unauthenticated", userId: null },
+      ),
+      new Promise<AuthState>((resolve) =>
+        setTimeout(() => resolve({ status: "timed_out", userId: null }), timeoutMs),
+      ),
+    ]);
+  } catch {
+    return { status: "timed_out", userId: null };
+  }
+}
 
 /**
  * ensureUser with an optional timeout. Use in pages/routes to avoid hanging if Clerk or DB is slow.

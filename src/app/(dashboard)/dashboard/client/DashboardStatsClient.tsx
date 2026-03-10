@@ -7,6 +7,7 @@ import {
   getLearnerBadgesFromStats,
   getLearnerRecommendationFromStats,
 } from "@/lib/curriculum/learning-path";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
 import type { DashboardStats } from "@/lib/server/data";
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -34,7 +35,7 @@ export default function DashboardStatsClient() {
           signal: controller.signal,
         });
         if (response.status === 401) {
-          router.replace(`/sign-in?redirect_url=${encodeURIComponent("/dashboard")}`);
+          router.replace(buildSignInRedirectUrl("/dashboard"));
           return;
         }
         if (!response.ok) {

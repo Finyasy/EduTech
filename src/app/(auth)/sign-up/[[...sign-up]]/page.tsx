@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import ClerkAuthCard from "@/components/auth/ClerkAuthCard";
 import AuthExperienceShell from "@/components/auth/AuthExperienceShell";
+import { normalizeAppRedirectPath } from "@/lib/auth/post-auth-routing";
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const isClerkConfigured =
@@ -9,11 +10,24 @@ const isClerkConfigured =
   clerkPublishableKey.startsWith("pk_") &&
   !clerkPublishableKey.endsWith("...");
 
-export default async function SignUpPage() {
+type SignUpPageProps = {
+  searchParams?: Promise<{ redirect_url?: string | string[] }>;
+};
+
+export default async function SignUpPage({ searchParams }: SignUpPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const redirectUrlValue = resolvedSearchParams?.redirect_url;
+  const requestedPath = normalizeAppRedirectPath(
+    Array.isArray(redirectUrlValue) ? redirectUrlValue[0] : redirectUrlValue,
+  );
+  const alternateHref = requestedPath
+    ? `/sign-in?redirect_url=${encodeURIComponent(requestedPath)}`
+    : "/sign-in";
+
   if (isClerkConfigured) {
     const { userId } = await auth();
     if (userId) {
-      redirect("/post-auth");
+      redirect(requestedPath ?? "/post-auth");
     }
   }
 
@@ -24,6 +38,7 @@ export default async function SignUpPage() {
         eyebrow="Learner onboarding"
         title="Create a learner account that feels guided."
         description="Families, learners, and teachers should land in a calm setup flow before they enter missions, progress, and classroom support."
+        alternateHref={alternateHref}
       >
         <div className="space-y-5 rounded-[1.75rem] border border-amber-200 bg-amber-50/90 p-6 text-sm text-amber-950">
           <div className="space-y-2">
@@ -59,6 +74,7 @@ export default async function SignUpPage() {
       eyebrow="Learner onboarding"
       title="Create an account and start the next mission."
       description="Set up a learner profile, step into structured AI, maths, and coding pathways, and keep progress visible for home and school."
+      alternateHref={alternateHref}
     >
       <div className="mx-auto w-full max-w-lg">
         <ClerkAuthCard mode="sign-up" />

@@ -1,41 +1,48 @@
-import { auth } from "@clerk/nextjs/server";
 import {
   getPostAuthRedirectTarget,
+  normalizeAppRedirectPath,
 } from "@/lib/auth/post-auth-routing";
-import { ensureUserByIdWithTimeout } from "@/lib/server/auth";
+import {
+  ensureUserByIdWithTimeout,
+  getAuthStateWithTimeout,
+} from "@/lib/server/auth";
 import PostAuthRedirectClient from "./PostAuthRedirectClient";
 
 const postAuthRedirectUrl = "/post-auth";
-const authTimeoutMs = 1200;
-const roleLookupTimeoutMs = 1000;
+const authTimeoutMs = 700;
+const roleLookupTimeoutMs = 800;
 
 export const dynamic = "force-dynamic";
 
-async function authWithTimeout() {
-  try {
-    return await Promise.race([
-      auth(),
-      new Promise<Awaited<ReturnType<typeof auth>>>((resolve) =>
-        setTimeout(() => resolve({ userId: null } as Awaited<ReturnType<typeof auth>>), authTimeoutMs),
-      ),
-    ]);
-  } catch {
-    return { userId: null } as Awaited<ReturnType<typeof auth>>;
-  }
-}
+type PostAuthPageProps = {
+  searchParams?: Promise<{ redirect_url?: string | string[] }>;
+};
 
-export default async function PostAuthPage() {
-  const { userId } = await authWithTimeout();
-  const user = userId
-    ? await ensureUserByIdWithTimeout(userId, roleLookupTimeoutMs)
+export default async function PostAuthPage({ searchParams }: PostAuthPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const redirectUrlValue = resolvedSearchParams?.redirect_url;
+  const requestedPath = normalizeAppRedirectPath(
+    Array.isArray(redirectUrlValue) ? redirectUrlValue[0] : redirectUrlValue,
+  );
+
+  const authState = await getAuthStateWithTimeout(authTimeoutMs);
+  const user = authState.status === "authenticated" && authState.userId && !requestedPath
+    ? await ensureUserByIdWithTimeout(authState.userId, roleLookupTimeoutMs)
     : null;
 
   const target = getPostAuthRedirectTarget({
     clerkPublishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-    userId,
+    userId: authState.status === "authenticated" ? authState.userId : null,
     userRole: user?.role ?? null,
     postAuthPath: postAuthRedirectUrl,
+    requestedPath,
   });
 
-  return <PostAuthRedirectClient target={target} />;
+  return (
+    <PostAuthRedirectClient
+      authState={authState}
+      requestedPath={requestedPath}
+      target={target}
+    />
+  );
 }

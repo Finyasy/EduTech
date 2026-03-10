@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
 import { notFound, redirect } from "next/navigation";
+import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
 import SiteHeader from "@/components/shared/SiteHeader";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
+import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import { getGameWithLevels } from "@/lib/server/data";
 import GamePlay from "./client/GamePlay";
 
@@ -9,20 +11,15 @@ type GamePageProps = {
   params: Promise<{ gameId: string }>;
 };
 
+const gameDetailAuthTimeoutMs = 900;
+
 export default async function GamePage({ params }: GamePageProps) {
   const { gameId } = await params;
   const data = await getGameWithLevels(gameId);
 
-  const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  const isClerkConfigured = Boolean(
-    clerkPublishableKey?.startsWith("pk_") && !clerkPublishableKey.endsWith("..."),
-  );
-
-  if (isClerkConfigured) {
-    const { userId } = await auth();
-    if (!userId) {
-      redirect(`/sign-in?redirect_url=${encodeURIComponent(`/games/${gameId}`)}`);
-    }
+  const authState = await getAuthStateWithTimeout(gameDetailAuthTimeoutMs);
+  if (authState.status === "unauthenticated") {
+    redirect(buildSignInRedirectUrl(`/games/${gameId}`));
   }
 
   if (!data) {
@@ -83,7 +80,22 @@ export default async function GamePage({ params }: GamePageProps) {
           </div>
         </header>
 
-        <GamePlay gameId={gameId} levels={data.levels} clerkEnabled={isClerkConfigured} />
+        {authState.status === "timed_out" && (
+          <div className="mb-6">
+            <LearnerRouteAuthBridge
+              redirectUrl={`/games/${gameId}`}
+              eyebrow="Learner session"
+              title="Checking your game session."
+              description="The game board is loaded. If your session expired, we will move you into sign-in and bring you straight back to this game."
+            />
+          </div>
+        )}
+
+        <GamePlay
+          gameId={gameId}
+          levels={data.levels}
+          clerkEnabled={authState.status !== "disabled"}
+        />
       </main>
     </div>
   );

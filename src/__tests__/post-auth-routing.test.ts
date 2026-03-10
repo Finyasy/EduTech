@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSignInRedirectUrl,
   getPostAuthRedirectTarget,
   isClerkPublishableKeyConfigured,
+  normalizeAppRedirectPath,
 } from "@/lib/auth/post-auth-routing";
 
 describe("isClerkPublishableKeyConfigured", () => {
@@ -51,14 +53,14 @@ describe("getPostAuthRedirectTarget", () => {
     ).toBe("/sign-in?redirect_url=%2Fpost-auth%3Fsource%3Dclerk");
   });
 
-  it("optimistically routes signed-in users to /teach when role lookup times out", () => {
+  it("routes signed-in users without a resolved role to /dashboard by default", () => {
     expect(
       getPostAuthRedirectTarget({
         clerkPublishableKey: validKey,
         userId: "user_123",
         userRole: null,
       }),
-    ).toBe("/teach");
+    ).toBe("/dashboard");
   });
 
   it("routes admin and teacher users to /teach", () => {
@@ -87,5 +89,56 @@ describe("getPostAuthRedirectTarget", () => {
         userRole: "STUDENT",
       }),
     ).toBe("/dashboard");
+  });
+
+  it("honors a valid requested path for signed-in users", () => {
+    expect(
+      getPostAuthRedirectTarget({
+        clerkPublishableKey: validKey,
+        userId: "user_123",
+        userRole: null,
+        requestedPath: "/teach",
+      }),
+    ).toBe("/teach");
+
+    expect(
+      getPostAuthRedirectTarget({
+        clerkPublishableKey: validKey,
+        userId: "user_123",
+        userRole: "STUDENT",
+        requestedPath: "/games/game-logic-quest",
+      }),
+    ).toBe("/games/game-logic-quest");
+  });
+
+  it("reuses a requested path when redirecting signed-out users to sign-in", () => {
+    expect(
+      getPostAuthRedirectTarget({
+        clerkPublishableKey: validKey,
+        userId: null,
+        userRole: null,
+        requestedPath: "/games",
+      }),
+    ).toBe("/sign-in?redirect_url=%2Fgames");
+  });
+});
+
+describe("normalizeAppRedirectPath", () => {
+  it("keeps internal paths and strips external targets", () => {
+    expect(normalizeAppRedirectPath("/games")).toBe("/games");
+    expect(normalizeAppRedirectPath("/dashboard?tab=progress")).toBe(
+      "/dashboard?tab=progress",
+    );
+    expect(normalizeAppRedirectPath("https://example.com/phishing")).toBe(null);
+    expect(normalizeAppRedirectPath("//example.com")).toBe(null);
+  });
+});
+
+describe("buildSignInRedirectUrl", () => {
+  it("encodes valid app paths and falls back to /post-auth", () => {
+    expect(buildSignInRedirectUrl("/teach")).toBe("/sign-in?redirect_url=%2Fteach");
+    expect(buildSignInRedirectUrl("https://example.com")).toBe(
+      "/sign-in?redirect_url=%2Fpost-auth",
+    );
   });
 });

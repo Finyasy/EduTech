@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import ClerkAuthCard from "@/components/auth/ClerkAuthCard";
 import AuthExperienceShell from "@/components/auth/AuthExperienceShell";
+import { normalizeAppRedirectPath } from "@/lib/auth/post-auth-routing";
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const isClerkConfigured =
@@ -10,11 +11,24 @@ const isClerkConfigured =
   clerkPublishableKey.startsWith("pk_") &&
   !clerkPublishableKey.endsWith("...");
 
-export default async function SignInPage() {
+type SignInPageProps = {
+  searchParams?: Promise<{ redirect_url?: string | string[] }>;
+};
+
+export default async function SignInPage({ searchParams }: SignInPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const redirectUrlValue = resolvedSearchParams?.redirect_url;
+  const requestedPath = normalizeAppRedirectPath(
+    Array.isArray(redirectUrlValue) ? redirectUrlValue[0] : redirectUrlValue,
+  );
+  const alternateHref = requestedPath
+    ? `/sign-up?redirect_url=${encodeURIComponent(requestedPath)}`
+    : "/sign-up";
+
   if (isClerkConfigured) {
     const { userId } = await auth();
     if (userId) {
-      redirect("/post-auth");
+      redirect(requestedPath ?? "/post-auth");
     }
   }
 
@@ -25,6 +39,7 @@ export default async function SignInPage() {
         eyebrow="Learner access"
         title="Sign in to resume your missions."
         description="LearnBridge keeps AI, maths, and coding in one learner flow. Add live Clerk keys to unlock secure sign-in for learners, teachers, and admins."
+        alternateHref={alternateHref}
       >
         <div className="space-y-5 rounded-[1.75rem] border border-amber-200 bg-amber-50/90 p-6 text-sm text-amber-950">
           <div className="space-y-2">
@@ -64,6 +79,7 @@ export default async function SignInPage() {
       eyebrow="Learner access"
       title="Sign in to resume your missions."
       description="Return to your learner workspace, continue course streaks, and step back into AI, maths, and coding from the same place."
+      alternateHref={alternateHref}
     >
       <div className="mx-auto w-full max-w-lg">
         <ClerkAuthCard mode="sign-in" />

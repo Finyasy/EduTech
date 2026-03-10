@@ -6,6 +6,7 @@ type AuthExperienceShellProps = {
   title: string;
   description: string;
   eyebrow: string;
+  alternateHref?: string;
   children: ReactNode;
 };
 
@@ -29,6 +30,7 @@ export default function AuthExperienceShell({
   title,
   description,
   eyebrow,
+  alternateHref,
   children,
 }: AuthExperienceShellProps) {
   const isSignIn = mode === "sign-in";
@@ -52,7 +54,7 @@ export default function AuthExperienceShell({
                 LearnBridge
               </Link>
               <Link
-                href={isSignIn ? "/sign-up" : "/sign-in"}
+                href={alternateHref ?? (isSignIn ? "/sign-up" : "/sign-in")}
                 className="text-sm font-semibold text-white/74 transition hover:text-white"
               >
                 {isSignIn ? "Need an account?" : "Already registered?"}

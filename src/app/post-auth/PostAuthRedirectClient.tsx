@@ -1,30 +1,81 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
+import type { AuthState } from "@/lib/server/auth";
 
 type PostAuthRedirectClientProps = {
+  authState: AuthState;
+  requestedPath: string | null;
   target: string;
 };
 
+const describeDestination = (path: string) => {
+  if (path.startsWith("/teach") || path.startsWith("/admin/teach")) {
+    return "teacher workspace";
+  }
+  if (path.startsWith("/games")) {
+    return "games library";
+  }
+  if (path.startsWith("/dashboard")) {
+    return "learner dashboard";
+  }
+  if (path.startsWith("/courses")) {
+    return "course library";
+  }
+  if (path.startsWith("/sign-in")) {
+    return "sign-in";
+  }
+  return "workspace";
+};
+
 export default function PostAuthRedirectClient({
+  authState,
+  requestedPath,
   target,
 }: PostAuthRedirectClientProps) {
   const router = useRouter();
+  const { isLoaded, userId } = useAuth();
+  const signInHref = useMemo(
+    () => buildSignInRedirectUrl(requestedPath ?? "/post-auth"),
+    [requestedPath],
+  );
+  const resolvedTarget = useMemo(() => {
+    if (authState.status !== "timed_out") {
+      return target;
+    }
+
+    if (!isLoaded) {
+      return null;
+    }
+
+    if (!userId) {
+      return signInHref;
+    }
+
+    return requestedPath ?? "/dashboard";
+  }, [authState.status, isLoaded, requestedPath, signInHref, target, userId]);
+  const destinationLabel = describeDestination(resolvedTarget ?? requestedPath ?? target);
 
   useEffect(() => {
-    router.replace(target);
+    if (!resolvedTarget) {
+      return;
+    }
 
-    // App Router redirects can hang during dev HMR; force a hard navigation fallback.
+    void router.prefetch(resolvedTarget);
+    router.replace(resolvedTarget);
+
     const timer = window.setTimeout(() => {
       if (window.location.pathname === "/post-auth") {
-        window.location.replace(target);
+        window.location.replace(resolvedTarget);
       }
-    }, 1200);
+    }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [router, target]);
+  }, [resolvedTarget, router]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-6 text-white">
@@ -42,17 +93,22 @@ export default function PostAuthRedirectClient({
           className="text-2xl font-semibold tracking-tight text-white"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Opening your workspace
+          Opening your {destinationLabel}
         </h1>
         <p className="mt-2 text-sm text-slate-300">
-          Redirecting you to the right LearnBridge workspace.
+          {authState.status === "timed_out"
+            ? "Your session is still being confirmed. We will move you as soon as Clerk finishes loading."
+            : "Redirecting you to the right LearnBridge workspace."}
         </p>
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
           <div className="h-full w-1/2 animate-pulse rounded-full bg-cyan-300" />
         </div>
         <p className="mt-4 text-xs text-slate-400">
           If this takes longer than a second,{" "}
-          <Link href={target} className="font-semibold text-cyan-200 underline">
+          <Link
+            href={resolvedTarget ?? signInHref}
+            className="font-semibold text-cyan-200 underline"
+          >
             continue manually
           </Link>
           .

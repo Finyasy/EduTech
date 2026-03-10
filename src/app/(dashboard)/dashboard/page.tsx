@@ -1,33 +1,22 @@
-import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
 import SiteHeader from "@/components/shared/SiteHeader";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
+import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import DashboardStatsClient from "./client/DashboardStatsClient";
 
-const dashboardAuthTimeoutMs = 2_000;
-
-function isClerkConfigured(): boolean {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  return Boolean(key?.startsWith("pk_") && !key?.endsWith("..."));
-}
-
-async function getAuthResultWithTimeout() {
-  return Promise.race([
-    auth(),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), dashboardAuthTimeoutMs)),
-  ]);
-}
+const dashboardAuthTimeoutMs = 900;
 
 export default async function DashboardPage() {
-  const clerkOn = isClerkConfigured();
-  const authResult = clerkOn ? await getAuthResultWithTimeout() : null;
-  const userId = authResult?.userId ?? null;
+  const authState = await getAuthStateWithTimeout(dashboardAuthTimeoutMs);
+  const userId = authState.status === "authenticated" ? authState.userId : null;
 
   if (process.env.DEBUG_CACHE === "1") {
-    console.log(`[dashboard] clerkOn=${clerkOn} user=${userId ?? "none"}`);
+    console.log(`[dashboard] auth=${authState.status} user=${userId ?? "none"}`);
   }
 
-  if (clerkOn && authResult && !userId) {
-    redirect(`/sign-in?redirect_url=${encodeURIComponent("/dashboard")}`);
+  if (authState.status === "unauthenticated") {
+    redirect(buildSignInRedirectUrl("/dashboard"));
   }
 
   return (
@@ -53,6 +42,17 @@ export default async function DashboardPage() {
             cockpit instead of separate light-weight widgets.
           </p>
         </header>
+
+        {authState.status === "timed_out" && (
+          <div className="mb-6">
+            <LearnerRouteAuthBridge
+              redirectUrl="/dashboard"
+              eyebrow="Learner session"
+              title="Checking your learner dashboard access."
+              description="The dashboard shell is ready. If your session expired, we will move you into the new sign-in flow without leaving you on a blank page."
+            />
+          </div>
+        )}
 
         <DashboardStatsClient />
       </main>

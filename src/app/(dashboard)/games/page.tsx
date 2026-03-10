@@ -1,21 +1,18 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
 import SiteHeader from "@/components/shared/SiteHeader";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
+import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import { listGames } from "@/lib/server/data";
 import type { GameOverview } from "@/lib/server/data";
 
-export default async function GamesPage() {
-  const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  const isClerkConfigured = Boolean(
-    clerkPublishableKey?.startsWith("pk_") && !clerkPublishableKey.endsWith("..."),
-  );
+const gamesAuthTimeoutMs = 900;
 
-  if (isClerkConfigured) {
-    const { userId } = await auth();
-    if (!userId) {
-      redirect(`/sign-in?redirect_url=${encodeURIComponent("/games")}`);
-    }
+export default async function GamesPage() {
+  const authState = await getAuthStateWithTimeout(gamesAuthTimeoutMs);
+  if (authState.status === "unauthenticated") {
+    redirect(buildSignInRedirectUrl("/games"));
   }
 
   const games: GameOverview[] = await listGames();
@@ -51,6 +48,17 @@ export default async function GamesPage() {
             answer quickly, and keep your learning momentum high.
           </p>
         </header>
+
+        {authState.status === "timed_out" && (
+          <div className="mb-6">
+            <LearnerRouteAuthBridge
+              redirectUrl="/games"
+              eyebrow="Learner session"
+              title="Checking your games access."
+              description="The games library is ready. If you are signed out, we will send you into the refreshed sign-in flow and then return you here."
+            />
+          </div>
+        )}
 
         <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {games.length === 0 ? (

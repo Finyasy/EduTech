@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { ClerkLoaded, ClerkLoading, SignIn, SignUp } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
+import { normalizeAppRedirectPath } from "@/lib/auth/post-auth-routing";
 
 type ClerkAuthCardProps = {
   mode: "sign-in" | "sign-up";
@@ -46,7 +48,6 @@ const applyAutocompleteHints = (mode: ClerkAuthCardProps["mode"]) => {
 
 const disableSocial =
   process.env.NEXT_PUBLIC_CLERK_DISABLE_SOCIAL === "1";
-const fallbackRedirectUrl = "/post-auth";
 
 const clerkAppearance = {
   elements: {
@@ -108,6 +109,12 @@ function AuthLoadingCard() {
 }
 
 export default function ClerkAuthCard({ mode }: ClerkAuthCardProps) {
+  const searchParams = useSearchParams();
+  const redirectTarget = useMemo(() => {
+    const requestedPath = normalizeAppRedirectPath(searchParams.get("redirect_url"));
+    return requestedPath ?? "/post-auth";
+  }, [searchParams]);
+
   useEffect(() => {
     applyAutocompleteHints(mode);
     const observer = new MutationObserver(() => applyAutocompleteHints(mode));
@@ -123,16 +130,16 @@ export default function ClerkAuthCard({ mode }: ClerkAuthCardProps) {
       <ClerkLoaded>
         {mode === "sign-in" ? (
           <SignIn
-            forceRedirectUrl={fallbackRedirectUrl}
-            fallbackRedirectUrl={fallbackRedirectUrl}
-            signUpFallbackRedirectUrl={fallbackRedirectUrl}
+            forceRedirectUrl={redirectTarget}
+            fallbackRedirectUrl={redirectTarget}
+            signUpFallbackRedirectUrl={redirectTarget}
             appearance={clerkAppearance}
           />
         ) : (
           <SignUp
-            forceRedirectUrl={fallbackRedirectUrl}
-            fallbackRedirectUrl={fallbackRedirectUrl}
-            signInFallbackRedirectUrl={fallbackRedirectUrl}
+            forceRedirectUrl={redirectTarget}
+            fallbackRedirectUrl={redirectTarget}
+            signInFallbackRedirectUrl={redirectTarget}
             appearance={clerkAppearance}
           />
         )}
