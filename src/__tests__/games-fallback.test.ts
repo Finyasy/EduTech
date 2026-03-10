@@ -60,7 +60,7 @@ describe("listGames fallback edge cases", () => {
     const { listGames } = await import("@/lib/server/data");
     const resultPromise = listGames();
 
-    await vi.advanceTimersByTimeAsync(801);
+    await vi.advanceTimersByTimeAsync(2201);
     const result = await resultPromise;
 
     expect(prismaMock.game.findMany).toHaveBeenCalledOnce();

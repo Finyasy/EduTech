@@ -39,7 +39,7 @@ describe("GET /api/dashboard/stats", () => {
     const { GET } = await import("@/app/api/dashboard/stats/route");
     const responsePromise = GET();
 
-    await vi.advanceTimersByTimeAsync(1_001);
+    await vi.advanceTimersByTimeAsync(1_501);
     const response = await responsePromise;
 
     expect(response.status).toBe(401);
@@ -77,7 +77,7 @@ describe("GET /api/dashboard/stats", () => {
     const { GET } = await import("@/app/api/dashboard/stats/route");
     const responsePromise = GET();
 
-    await vi.advanceTimersByTimeAsync(901);
+    await vi.advanceTimersByTimeAsync(2_401);
     const response = await responsePromise;
 
     expect(response.status).toBe(200);

@@ -13,9 +13,7 @@ function isClerkConfigured(): boolean {
 async function getAuthResultWithTimeout() {
   return Promise.race([
     auth(),
-    new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), dashboardAuthTimeoutMs),
-    ),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), dashboardAuthTimeoutMs)),
   ]);
 }
 
@@ -25,9 +23,7 @@ export default async function DashboardPage() {
   const userId = authResult?.userId ?? null;
 
   if (process.env.DEBUG_CACHE === "1") {
-    console.log(
-      `[dashboard] clerkOn=${clerkOn} user=${userId ?? "none"}`,
-    );
+    console.log(`[dashboard] clerkOn=${clerkOn} user=${userId ?? "none"}`);
   }
 
   if (clerkOn && authResult && !userId) {
@@ -35,24 +31,29 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-amber-50">
+    <div className="relative min-h-screen overflow-hidden">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[30rem] bg-[radial-gradient(circle_at_14%_12%,rgba(252,211,77,0.24),transparent_20%),radial-gradient(circle_at_84%_8%,rgba(125,211,252,0.2),transparent_22%),linear-gradient(180deg,#091a41_0%,#112b60_36%,transparent_82%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-24 h-[34rem] grid-orbit opacity-30" />
+
       <SiteHeader withAuth={false} />
-      <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
-        <header className="mb-10 space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
-            Student dashboard
+
+      <main className="mx-auto w-full max-w-7xl px-6 pb-20 pt-8 md:px-8">
+        <header className="mb-8 rounded-[2.6rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] px-6 py-8 text-white shadow-skyline md:px-10 md:py-10">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/60">
+            Learner dashboard
           </p>
           <h1
-            className="text-3xl font-semibold text-slate-900 md:text-4xl"
+            className="mt-3 text-4xl font-semibold leading-tight md:text-6xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
             Welcome back, explorer.
           </h1>
-          <p className="max-w-2xl text-slate-700">
-            Track your progress, keep your streak alive, and monitor mastery in
-            AI, coding, and mathematics.
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-white/72 md:text-base">
+            Your progress, streaks, next mission, and mastery map now live in one faster learner
+            cockpit instead of separate light-weight widgets.
           </p>
         </header>
+
         <DashboardStatsClient />
       </main>
     </div>

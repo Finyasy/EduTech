@@ -18,10 +18,6 @@ type NavLinksProps = {
 export default function NavLinks({ items, clerkEnabled }: NavLinksProps) {
   const pathname = usePathname();
 
-  if (!clerkEnabled) {
-    return null;
-  }
-
   const publicItems = items.filter((item) => !item.authOnly);
   const authItems = items.filter((item) => item.authOnly);
 
@@ -36,10 +32,10 @@ export default function NavLinks({ items, clerkEnabled }: NavLinksProps) {
         href={item.href}
         prefetch={item.href.startsWith("/admin") ? false : undefined}
         aria-current={isActive ? "page" : undefined}
-        className={`inline-flex min-h-11 items-center rounded-full px-3 py-2 transition ${
+        className={`inline-flex min-h-11 items-center rounded-full px-3.5 py-2 text-sm font-semibold transition ${
           isActive
-            ? "bg-white text-slate-900 shadow-sm"
-            : "hover:bg-white/80 hover:text-slate-900"
+            ? "bg-slate-950 text-white shadow-[0_10px_30px_rgba(15,23,42,0.18)]"
+            : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900"
         }`}
       >
         {item.label}
@@ -48,9 +44,9 @@ export default function NavLinks({ items, clerkEnabled }: NavLinksProps) {
   };
 
   return (
-    <SignedIn>
+    <>
       {publicItems.map(renderLink)}
-      {authItems.map(renderLink)}
-    </SignedIn>
+      {clerkEnabled && <SignedIn>{authItems.map(renderLink)}</SignedIn>}
+    </>
   );
 }

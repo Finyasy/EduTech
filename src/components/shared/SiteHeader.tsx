@@ -4,7 +4,7 @@ import AuthNav from "./AuthNav";
 import NavLinks from "./NavLinks";
 
 const navItems = [
-  { href: "/courses", label: "Courses", authOnly: true },
+  { href: "/courses", label: "Courses" },
   { href: "/dashboard", label: "Dashboard", authOnly: true },
   { href: "/games", label: "Games", authOnly: true },
 ];
@@ -37,19 +37,19 @@ export default async function SiteHeader({
     : user?.role === "ADMIN" || user?.role === "TEACHER";
 
   return (
-    <header className="sticky top-0 z-20 border-b border-amber-100/80 bg-amber-50/80 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
+    <header className="sticky top-0 z-40 px-4 pt-4">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between rounded-full border border-white/60 bg-white/72 px-4 py-3 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl">
         <Link
           href="/"
-          className="inline-flex min-h-11 items-center gap-2 rounded-full pr-2 text-lg font-semibold tracking-tight text-slate-900"
+          className="inline-flex min-h-11 items-center gap-3 rounded-full pr-2 text-lg font-semibold tracking-tight text-slate-950"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-300 via-amber-200 to-sky-200 text-orange-950 shadow-sm">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f59e0b_0%,#fde68a_38%,#a7f3d0_72%,#bae6fd_100%)] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_20px_rgba(15,23,42,0.12)]">
             LB
           </span>
           LearnBridge
         </Link>
-        <nav className="flex items-center gap-5 text-sm font-semibold text-slate-700">
+        <nav className="flex items-center gap-2 text-sm font-semibold text-slate-700">
           <NavLinks items={navItems} clerkEnabled={clerkEnabled} />
           {clerkEnabled && <AuthNav isStaff={isStaff} isAdmin={isAdmin} />}
         </nav>

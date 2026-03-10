@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getDashboardStats } from "@/lib/server/data";
 
-const authTimeoutMs = 1_000;
-const statsTimeoutMs = 900;
+const authTimeoutMs = 1_500;
+const statsTimeoutMs = 2_400;
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
   try {

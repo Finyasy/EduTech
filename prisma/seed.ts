@@ -278,6 +278,189 @@ async function seedDatabase(prisma: PrismaClient) {
     },
   });
 
+  await prisma.course.upsert({
+    where: { id: "course-color-lab" },
+    update: {
+      title: "Color Quest AI Lab",
+      description:
+        "Children train a color-and-shape helper, count results, and explain why each item belongs in a group.",
+      gradeLevel: "Ages 5-7",
+      ageBand: "5-7",
+      pathwayStage: "Explorer",
+      aiFocus: "Labeling and confidence checks",
+      codingFocus: "Block conditions and sequence loops",
+      mathFocus: "Counting, comparing sets, and picture graphs",
+      missionOutcome: "Create a classroom color sorter and explain one correction.",
+      sessionBlueprint: "8 min discover, 20 min build, 5 min share",
+      isPublished: true,
+    },
+    create: {
+      id: "course-color-lab",
+      title: "Color Quest AI Lab",
+      description:
+        "Children train a color-and-shape helper, count results, and explain why each item belongs in a group.",
+      gradeLevel: "Ages 5-7",
+      ageBand: "5-7",
+      pathwayStage: "Explorer",
+      aiFocus: "Labeling and confidence checks",
+      codingFocus: "Block conditions and sequence loops",
+      mathFocus: "Counting, comparing sets, and picture graphs",
+      missionOutcome: "Create a classroom color sorter and explain one correction.",
+      sessionBlueprint: "8 min discover, 20 min build, 5 min share",
+      isPublished: true,
+      lessons: {
+        create: [
+          {
+            id: "lesson-color-1",
+            title: "Label the Color Clues",
+            videoId: "M7lc1UVf-VE",
+            order: 1,
+            notes: "Sort colorful shape cards, add labels, and predict how your AI helper should group them.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-color-2",
+            title: "Code the Color Sorter",
+            videoId: "ysz5S6PUM-U",
+            order: 2,
+            notes: "Build block rules that route each item by color and shape, then debug one wrong decision.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-color-3",
+            title: "Confidence Meter Showcase",
+            videoId: "aqz-KE-bpKQ",
+            order: 3,
+            notes: "Count correct guesses, draw a mini graph, and explain how one rule change improved results.",
+            isPublished: true,
+          },
+        ],
+      },
+    },
+  });
+
+  await prisma.course.upsert({
+    where: { id: "course-arcade-ai" },
+    update: {
+      title: "Arcade AI Game Lab",
+      description:
+        "Learners code mini-games with adaptive opponents, then tune difficulty using score data.",
+      gradeLevel: "Ages 8-10",
+      ageBand: "8-10",
+      pathwayStage: "Builder",
+      aiFocus: "Rule-based game agents and feedback loops",
+      codingFocus: "Loops, functions, and game state debugging",
+      mathFocus: "Coordinates, rates, and probability tuning",
+      missionOutcome: "Ship a playable arcade challenge with fair difficulty.",
+      sessionBlueprint: "12 min model, 26 min code, 8 min test",
+      isPublished: true,
+    },
+    create: {
+      id: "course-arcade-ai",
+      title: "Arcade AI Game Lab",
+      description:
+        "Learners code mini-games with adaptive opponents, then tune difficulty using score data.",
+      gradeLevel: "Ages 8-10",
+      ageBand: "8-10",
+      pathwayStage: "Builder",
+      aiFocus: "Rule-based game agents and feedback loops",
+      codingFocus: "Loops, functions, and game state debugging",
+      mathFocus: "Coordinates, rates, and probability tuning",
+      missionOutcome: "Ship a playable arcade challenge with fair difficulty.",
+      sessionBlueprint: "12 min model, 26 min code, 8 min test",
+      isPublished: true,
+      lessons: {
+        create: [
+          {
+            id: "lesson-arcade-1",
+            title: "Read Game Signals",
+            videoId: "M7lc1UVf-VE",
+            order: 1,
+            notes: "Track player score and movement patterns to decide when your game AI should react.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-arcade-2",
+            title: "Code a Smart Opponent",
+            videoId: "ysz5S6PUM-U",
+            order: 2,
+            notes: "Use loops and conditions to build an opponent that adapts to player behavior.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-arcade-3",
+            title: "Balance and Fairness Tuning",
+            videoId: "aqz-KE-bpKQ",
+            order: 3,
+            notes: "Tune difficulty with probability math and test whether beginner and advanced players both have a fair chance.",
+            isPublished: true,
+          },
+        ],
+      },
+    },
+  });
+
+  await prisma.course.upsert({
+    where: { id: "course-app-inventor" },
+    update: {
+      title: "AI App Inventor Studio",
+      description:
+        "Teens design mobile AI helpers, evaluate model accuracy, and present ethical product decisions.",
+      gradeLevel: "Ages 11-14",
+      ageBand: "11-14",
+      pathwayStage: "Creator",
+      aiFocus: "Model training, evaluation, and bias mitigation",
+      codingFocus: "Event-driven app logic and Python-style thinking",
+      mathFocus: "Percent accuracy, confusion counts, and data summaries",
+      missionOutcome: "Prototype an AI mobile helper and defend design choices.",
+      sessionBlueprint: "15 min plan, 28 min build, 10 min pitch",
+      isPublished: true,
+    },
+    create: {
+      id: "course-app-inventor",
+      title: "AI App Inventor Studio",
+      description:
+        "Teens design mobile AI helpers, evaluate model accuracy, and present ethical product decisions.",
+      gradeLevel: "Ages 11-14",
+      ageBand: "11-14",
+      pathwayStage: "Creator",
+      aiFocus: "Model training, evaluation, and bias mitigation",
+      codingFocus: "Event-driven app logic and Python-style thinking",
+      mathFocus: "Percent accuracy, confusion counts, and data summaries",
+      missionOutcome: "Prototype an AI mobile helper and defend design choices.",
+      sessionBlueprint: "15 min plan, 28 min build, 10 min pitch",
+      isPublished: true,
+      lessons: {
+        create: [
+          {
+            id: "lesson-appstudio-1",
+            title: "Collect Clean Training Data",
+            videoId: "M7lc1UVf-VE",
+            order: 1,
+            notes: "Design data labels, gather balanced examples, and discuss where noisy data can mislead a model.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-appstudio-2",
+            title: "Build App Logic and Actions",
+            videoId: "ysz5S6PUM-U",
+            order: 2,
+            notes: "Connect model outputs to app actions using event-driven logic and safety checks.",
+            isPublished: true,
+          },
+          {
+            id: "lesson-appstudio-3",
+            title: "Evaluate Accuracy and Ethics",
+            videoId: "aqz-KE-bpKQ",
+            order: 3,
+            notes: "Use percentage metrics to evaluate performance, then present one fairness and privacy improvement.",
+            isPublished: true,
+          },
+        ],
+      },
+    },
+  });
+
   const ownerKey = "seed-teacher";
   await prisma.teacherSchoolProfile.upsert({
     where: { ownerKey },

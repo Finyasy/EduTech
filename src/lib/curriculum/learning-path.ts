@@ -80,7 +80,7 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Vocabulary + classification bridge lessons",
       "Whole-group interactive station work",
     ],
-    nextMissionIds: ["course-treasure"],
+    nextMissionIds: ["course-treasure", "course-color-lab"],
     badgeLabel: "Safari Sorter",
     themeBlend: { ai: 40, coding: 25, math: 35 },
   },
@@ -95,9 +95,24 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Number sequencing support",
       "Debugging and turn-taking routines",
     ],
-    nextMissionIds: ["course-math", "course-space-signals"],
+    nextMissionIds: ["course-color-lab", "course-math"],
     badgeLabel: "Trail Coder",
     themeBlend: { ai: 20, coding: 45, math: 35 },
+  },
+  "course-color-lab": {
+    courseId: "course-color-lab",
+    priority: "Booster",
+    sequenceIndex: 35,
+    ageBand: "5-7",
+    stickyHook: "Color-focused sorting missions blend visual play with early graph thinking.",
+    teacherUses: [
+      "Color and shape grouping reinforcement",
+      "Picture-graph math warmups",
+      "Confidence and correction language routines",
+    ],
+    nextMissionIds: ["course-math", "course-space-signals"],
+    badgeLabel: "Color Coder",
+    themeBlend: { ai: 35, coding: 30, math: 35 },
   },
   "course-math": {
     courseId: "course-math",
@@ -110,7 +125,7 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Debugging routines for mixed-ability groups",
       "Coding clubs and challenge periods",
     ],
-    nextMissionIds: ["course-space-signals", "course-eco-sensors"],
+    nextMissionIds: ["course-space-signals", "course-arcade-ai"],
     badgeLabel: "Robot Navigator",
     themeBlend: { ai: 20, coding: 45, math: 35 },
   },
@@ -125,7 +140,7 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Graph reading and coordinate mini-projects",
       "Conditional logic practice",
     ],
-    nextMissionIds: ["course-eco-sensors", "course-climate-data"],
+    nextMissionIds: ["course-eco-sensors", "course-arcade-ai"],
     badgeLabel: "Signal Detective",
     themeBlend: { ai: 35, coding: 35, math: 30 },
   },
@@ -140,9 +155,24 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Threshold-rule design discussions",
       "Science + maths integration blocks",
     ],
-    nextMissionIds: ["course-climate-data"],
+    nextMissionIds: ["course-arcade-ai", "course-climate-data"],
     badgeLabel: "Eco Builder",
     themeBlend: { ai: 30, coding: 30, math: 40 },
+  },
+  "course-arcade-ai": {
+    courseId: "course-arcade-ai",
+    priority: "Stretch",
+    sequenceIndex: 65,
+    ageBand: "8-10",
+    stickyHook: "Arcade challenge loops make debugging feel playful and competitive.",
+    teacherUses: [
+      "Game design with measurable fairness checks",
+      "Probability tuning mini-lessons",
+      "Pair programming and iterative testing",
+    ],
+    nextMissionIds: ["course-story", "course-climate-data"],
+    badgeLabel: "Arcade Architect",
+    themeBlend: { ai: 35, coding: 40, math: 25 },
   },
   "course-story": {
     courseId: "course-story",
@@ -170,7 +200,7 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Python summarization practice",
       "Evidence-based claims and critique",
     ],
-    nextMissionIds: ["course-vision-lab"],
+    nextMissionIds: ["course-vision-lab", "course-app-inventor"],
     badgeLabel: "Data Analyst",
     themeBlend: { ai: 30, coding: 30, math: 40 },
   },
@@ -185,21 +215,39 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
       "Test-case design and scoring logic",
       "Peer review and fairness evidence presentations",
     ],
-    nextMissionIds: [],
+    nextMissionIds: ["course-app-inventor"],
     badgeLabel: "Fairness Auditor",
     themeBlend: { ai: 45, coding: 30, math: 25 },
+  },
+  "course-app-inventor": {
+    courseId: "course-app-inventor",
+    priority: "Stretch",
+    sequenceIndex: 95,
+    ageBand: "11-14",
+    stickyHook: "Mobile app outcomes increase ownership, relevance, and demo-day excitement.",
+    teacherUses: [
+      "App prototype and entrepreneurship clubs",
+      "Model evaluation and ethics reflection",
+      "Cross-curricular showcase projects",
+    ],
+    nextMissionIds: [],
+    badgeLabel: "App Innovator",
+    themeBlend: { ai: 40, coding: 35, math: 25 },
   },
 };
 
 const SUBJECT_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   "subject-math": [
     { courseId: "course-math", reason: "Math subject sessions map directly to robot coding and quantitative problem solving.", weight: 4 },
+    { courseId: "course-arcade-ai", reason: "Arcade balancing uses rate, score, and probability maths in authentic coding tasks.", weight: 3 },
     { courseId: "course-logic", reason: "Pre-math patterns and sorting support early AI reasoning foundations.", weight: 2 },
+    { courseId: "course-color-lab", reason: "Color and shape tallies support early counting and comparison fluency.", weight: 2 },
     { courseId: "course-space-signals", reason: "Graphing and comparisons reinforce upper-primary maths fluency.", weight: 2 },
     { courseId: "course-eco-sensors", reason: "Measurement and thresholds apply maths in practical coding contexts.", weight: 2 },
   ],
   "subject-language": [
     { courseId: "course-story", reason: "Language instruction aligns with prompt writing, storytelling, and chatbot reflection.", weight: 4 },
+    { courseId: "course-app-inventor", reason: "Pitch writing and user-story documentation strengthen applied language outcomes.", weight: 2 },
     { courseId: "course-vision-lab", reason: "Language-rich critique helps learners explain fairness and evidence.", weight: 2 },
     { courseId: "course-climate-data", reason: "Supports reading data reports and writing evidence-based summaries.", weight: 1 },
   ],
@@ -208,6 +256,7 @@ const SUBJECT_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
 const STRAND_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   "strand-pre-number": [
     { courseId: "course-logic", reason: "Pre-number concepts feed classification and pattern-detective routines.", weight: 4 },
+    { courseId: "course-color-lab", reason: "Color-based grouping and simple tallying reinforce pre-number confidence.", weight: 3 },
     { courseId: "course-safari", reason: "Grouping and comparing sets match safari sorting tasks.", weight: 3 },
     { courseId: "course-treasure", reason: "Ordering and path steps strengthen early sequence thinking.", weight: 2 },
   ],
@@ -218,6 +267,7 @@ const STRAND_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   "strand-measurement": [
     { courseId: "course-eco-sensors", reason: "Measurement strand maps to sensor readings and threshold decisions.", weight: 4 },
     { courseId: "course-math", reason: "Measurement supports robot timing and path accuracy checks.", weight: 3 },
+    { courseId: "course-arcade-ai", reason: "Game balancing uses measured response times and score deltas.", weight: 2 },
     { courseId: "course-climate-data", reason: "Measurement vocabulary extends into climate data interpretation.", weight: 2 },
   ],
   "strand-geometry": [
@@ -244,6 +294,7 @@ const STRAND_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
 const ACTIVITY_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   "activity-sorting-grouping": [
     { courseId: "course-logic", reason: "Direct match for sorting and classification logic in AI Pattern Detectives.", weight: 6 },
+    { courseId: "course-color-lab", reason: "Color and shape sorting tasks provide a direct grouping-to-AI bridge.", weight: 5 },
     { courseId: "course-safari", reason: "Sound and picture grouping is the core mechanic in Safari missions.", weight: 5 },
   ],
   "activity-matching-pairing": [
@@ -257,6 +308,7 @@ const ACTIVITY_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   ],
   "activity-patterns": [
     { courseId: "course-logic", reason: "Strongest fit for repeated visual and number pattern detection.", weight: 6 },
+    { courseId: "course-color-lab", reason: "Pattern comparisons in color grids support visual pattern fluency.", weight: 4 },
     { courseId: "course-space-signals", reason: "Pattern spotting extends to signal anomaly detection tasks.", weight: 3 },
   ],
   "activity-number-recognition": [
@@ -407,24 +459,30 @@ const FALLBACK_TITLES: Record<string, string> = {
   "course-logic": "AI Pattern Detectives",
   "course-safari": "Sound Sorting Safari",
   "course-treasure": "Treasure Bot Trail",
+  "course-color-lab": "Color Quest AI Lab",
   "course-math": "Robot Coders Math Lab",
   "course-space-signals": "Space Signal Detectives",
   "course-eco-sensors": "Eco Sensor Builders",
+  "course-arcade-ai": "Arcade AI Game Lab",
   "course-story": "Story Chatbot Studio",
   "course-climate-data": "Climate Data Code Studio",
   "course-vision-lab": "Vision Lab Ethics Arcade",
+  "course-app-inventor": "AI App Inventor Studio",
 };
 
 const DEFAULT_RECOMMENDATION_SEQUENCE = [
   "course-logic",
   "course-safari",
   "course-treasure",
+  "course-color-lab",
   "course-math",
   "course-space-signals",
   "course-eco-sensors",
+  "course-arcade-ai",
   "course-story",
   "course-climate-data",
   "course-vision-lab",
+  "course-app-inventor",
 ] as const;
 
 function learnerStageTarget(stats: DashboardStatsLike) {

@@ -122,6 +122,25 @@ export const courses: CourseSummary[] = [
       "https://images.unsplash.com/photo-1516627145497-ae6968895b74?q=80&w=1600&auto=format&fit=crop",
   },
   {
+    id: "course-color-lab",
+    title: "Color Quest AI Lab",
+    description:
+      "Children train a color-and-shape helper, count results, and explain why each item belongs in a group.",
+    gradeLevel: "Ages 5-7",
+    lessonCount: 3,
+    difficulty: "Explorer",
+    estimatedMinutes: 38,
+    ageBand: "5-7",
+    pathwayStage: "Explorer",
+    aiFocus: "Labeling and confidence checks",
+    codingFocus: "Block conditions and sequence loops",
+    mathFocus: "Counting, comparing sets, and picture graphs",
+    missionOutcome: "Create a classroom color sorter and explain one correction.",
+    sessionBlueprint: "8 min discover, 20 min build, 5 min share",
+    imageUrl:
+      "https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=1600&auto=format&fit=crop",
+  },
+  {
     id: "course-space-signals",
     title: "Space Signal Detectives",
     description:
@@ -160,6 +179,25 @@ export const courses: CourseSummary[] = [
       "https://images.unsplash.com/photo-1464226184884-fa280b87c399?q=80&w=1600&auto=format&fit=crop",
   },
   {
+    id: "course-arcade-ai",
+    title: "Arcade AI Game Lab",
+    description:
+      "Learners code mini-games with adaptive opponents, then tune difficulty using score data.",
+    gradeLevel: "Ages 8-10",
+    lessonCount: 3,
+    difficulty: "Builder",
+    estimatedMinutes: 52,
+    ageBand: "8-10",
+    pathwayStage: "Builder",
+    aiFocus: "Rule-based game agents and feedback loops",
+    codingFocus: "Loops, functions, and game state debugging",
+    mathFocus: "Coordinates, rates, and probability tuning",
+    missionOutcome: "Ship a playable arcade challenge with fair difficulty.",
+    sessionBlueprint: "12 min model, 26 min code, 8 min test",
+    imageUrl:
+      "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?q=80&w=1600&auto=format&fit=crop",
+  },
+  {
     id: "course-climate-data",
     title: "Climate Data Code Studio",
     description:
@@ -196,6 +234,25 @@ export const courses: CourseSummary[] = [
     sessionBlueprint: "12 min demo, 28 min build, 10 min review",
     imageUrl:
       "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?q=80&w=1600&auto=format&fit=crop",
+  },
+  {
+    id: "course-app-inventor",
+    title: "AI App Inventor Studio",
+    description:
+      "Teens design mobile AI helpers, evaluate model accuracy, and present ethical product decisions.",
+    gradeLevel: "Ages 11-14",
+    lessonCount: 3,
+    difficulty: "Creator",
+    estimatedMinutes: 58,
+    ageBand: "11-14",
+    pathwayStage: "Creator",
+    aiFocus: "Model training, evaluation, and bias mitigation",
+    codingFocus: "Event-driven app logic and Python-style thinking",
+    mathFocus: "Percent accuracy, confusion counts, and data summaries",
+    missionOutcome: "Prototype an AI mobile helper and defend design choices.",
+    sessionBlueprint: "15 min plan, 28 min build, 10 min pitch",
+    imageUrl:
+      "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?q=80&w=1600&auto=format&fit=crop",
   },
 ];
 
@@ -321,6 +378,30 @@ export const lessons: LessonSummary[] = [
     notes: "Solve pattern-based clue cards and improve your path so the bot reaches treasure faster.",
   },
   {
+    id: "lesson-color-1",
+    courseId: "course-color-lab",
+    title: "Label the Color Clues",
+    videoId: "M7lc1UVf-VE",
+    order: 1,
+    notes: "Sort colorful shape cards, add labels, and predict how your AI helper should group them.",
+  },
+  {
+    id: "lesson-color-2",
+    courseId: "course-color-lab",
+    title: "Code the Color Sorter",
+    videoId: "ysz5S6PUM-U",
+    order: 2,
+    notes: "Build block rules that route each item by color and shape, then debug one wrong decision.",
+  },
+  {
+    id: "lesson-color-3",
+    courseId: "course-color-lab",
+    title: "Confidence Meter Showcase",
+    videoId: "aqz-KE-bpKQ",
+    order: 3,
+    notes: "Count correct guesses, draw a mini graph, and explain how one rule change improved results.",
+  },
+  {
     id: "lesson-space-1",
     courseId: "course-space-signals",
     title: "Signal Patterns on a Star Grid",
@@ -369,6 +450,30 @@ export const lessons: LessonSummary[] = [
     notes: "Run test cases, debug one threshold, and explain how your eco helper makes choices.",
   },
   {
+    id: "lesson-arcade-1",
+    courseId: "course-arcade-ai",
+    title: "Read Game Signals",
+    videoId: "M7lc1UVf-VE",
+    order: 1,
+    notes: "Track player score and movement patterns to decide when your game AI should react.",
+  },
+  {
+    id: "lesson-arcade-2",
+    courseId: "course-arcade-ai",
+    title: "Code a Smart Opponent",
+    videoId: "ysz5S6PUM-U",
+    order: 2,
+    notes: "Use loops and conditions to build an opponent that adapts to player behavior.",
+  },
+  {
+    id: "lesson-arcade-3",
+    courseId: "course-arcade-ai",
+    title: "Balance and Fairness Tuning",
+    videoId: "aqz-KE-bpKQ",
+    order: 3,
+    notes: "Tune difficulty with probability math and test whether beginner and advanced players both have a fair chance.",
+  },
+  {
     id: "lesson-climate-1",
     courseId: "course-climate-data",
     title: "Read the Climate Table",
@@ -415,6 +520,30 @@ export const lessons: LessonSummary[] = [
     videoId: "aqz-KE-bpKQ",
     order: 3,
     notes: "Compare result ratios, identify bias risk, and propose one fairer rule change.",
+  },
+  {
+    id: "lesson-appstudio-1",
+    courseId: "course-app-inventor",
+    title: "Collect Clean Training Data",
+    videoId: "M7lc1UVf-VE",
+    order: 1,
+    notes: "Design data labels, gather balanced examples, and discuss where noisy data can mislead a model.",
+  },
+  {
+    id: "lesson-appstudio-2",
+    courseId: "course-app-inventor",
+    title: "Build App Logic and Actions",
+    videoId: "ysz5S6PUM-U",
+    order: 2,
+    notes: "Connect model outputs to app actions using event-driven logic and safety checks.",
+  },
+  {
+    id: "lesson-appstudio-3",
+    courseId: "course-app-inventor",
+    title: "Evaluate Accuracy and Ethics",
+    videoId: "aqz-KE-bpKQ",
+    order: 3,
+    notes: "Use percentage metrics to evaluate performance, then present one fairness and privacy improvement.",
   },
 ];
 

@@ -58,8 +58,9 @@ const hasDatabase = () =>
   Boolean(process.env.DATABASE_URL && getPrisma());
 
 const PUBLIC_DATA_REVALIDATE_SECONDS = 120;
-const COURSE_QUERY_TIMEOUT_MS = 1_000;
-const GAME_QUERY_TIMEOUT_MS = 800;
+const PUBLIC_DATA_CACHE_VERSION = "2026-03-10-live";
+const COURSE_QUERY_TIMEOUT_MS = 2_500;
+const GAME_QUERY_TIMEOUT_MS = 2_200;
 const COURSES_DEGRADED_SCOPE = "courses-public";
 const GAMES_DEGRADED_SCOPE = "games-public";
 const DASHBOARD_DEGRADED_SCOPE = "dashboard-stats";
@@ -167,14 +168,7 @@ const withCourseQueryTimeout = async <T,>(
     ),
   ]);
 
-async function listCoursesUncached(): Promise<CourseOverview[]> {
-  if (!hasDatabase()) {
-    return getMockCourseOverviews();
-  }
-  if (isDegraded(COURSES_DEGRADED_SCOPE)) {
-    return getMockCourseOverviews();
-  }
-
+async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
   const prisma = getPrisma()!;
   try {
     const dbCourses = await withCourseQueryTimeout(
@@ -202,10 +196,8 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
       }),
     );
     if (!dbCourses) {
-      markDegraded(COURSES_DEGRADED_SCOPE, "courses-query-timeout");
-      return getMockCourseOverviews();
+      throw new Error("courses-query-timeout");
     }
-    clearDegraded(COURSES_DEGRADED_SCOPE);
     return dbCourses.map((course) => ({
       id: course.id,
       title: course.title,
@@ -223,8 +215,7 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
     }));
   } catch (error) {
     if (!isCourseMetadataUnavailableError(error)) {
-      markDegraded(COURSES_DEGRADED_SCOPE, error);
-      return getMockCourseOverviews();
+      throw error;
     }
 
     const legacyCourses = await withCourseQueryTimeout(
@@ -245,10 +236,8 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
       }),
     );
     if (!legacyCourses) {
-      markDegraded(COURSES_DEGRADED_SCOPE, "courses-legacy-query-timeout");
-      return getMockCourseOverviews();
+      throw new Error("courses-legacy-query-timeout");
     }
-    clearDegraded(COURSES_DEGRADED_SCOPE);
     return legacyCourses.map((course) => ({
       id: course.id,
       title: course.title,
@@ -264,6 +253,21 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
       missionOutcome: undefined,
       sessionBlueprint: undefined,
     }));
+  }
+}
+
+async function listCoursesUncached(): Promise<CourseOverview[]> {
+  if (!hasDatabase()) {
+    return getMockCourseOverviews();
+  }
+
+  try {
+    const courses = await listCoursesLiveCached();
+    clearDegraded(COURSES_DEGRADED_SCOPE);
+    return courses;
+  } catch (error) {
+    markDegraded(COURSES_DEGRADED_SCOPE, error);
+    return getMockCourseOverviews();
   }
 }
 
@@ -636,36 +640,37 @@ const withGameQueryTimeout = async <T,>(
     ),
   ]);
 
+async function listGamesLiveUncached(): Promise<GameOverview[]> {
+  const prisma = getPrisma()!;
+  const dbGames = await withGameQueryTimeout(
+    prisma.game.findMany({
+      where: { isPublished: true },
+      include: {
+        levels: { orderBy: { levelNumber: "asc" }, select: { id: true } },
+      },
+      orderBy: { title: "asc" },
+    }),
+  );
+  if (!dbGames) {
+    throw new Error("games-query-timeout");
+  }
+  return dbGames.map((game) => ({
+    id: game.id,
+    title: game.title,
+    description: game.description,
+    levelCount: game.levels.length,
+  }));
+}
+
 async function listGamesUncached(): Promise<GameOverview[]> {
   if (!hasDatabase()) {
     return getMockGameOverviews();
   }
-  if (isDegraded(GAMES_DEGRADED_SCOPE)) {
-    return getMockGameOverviews();
-  }
 
-  const prisma = getPrisma()!;
   try {
-    const dbGames = await withGameQueryTimeout(
-      prisma.game.findMany({
-        where: { isPublished: true },
-        include: {
-          levels: { orderBy: { levelNumber: "asc" }, select: { id: true } },
-        },
-        orderBy: { title: "asc" },
-      }),
-    );
-    if (!dbGames) {
-      markDegraded(GAMES_DEGRADED_SCOPE, "games-query-timeout");
-      return getMockGameOverviews();
-    }
+    const games = await listGamesLiveCached();
     clearDegraded(GAMES_DEGRADED_SCOPE);
-    return dbGames.map((game) => ({
-      id: game.id,
-      title: game.title,
-      description: game.description,
-      levelCount: game.levels.length,
-    }));
+    return games;
   } catch (error) {
     markDegraded(GAMES_DEGRADED_SCOPE, error);
     return getMockGameOverviews();
@@ -674,9 +679,6 @@ async function listGamesUncached(): Promise<GameOverview[]> {
 
 async function getGameUncached(gameId: string) {
   if (!hasDatabase()) {
-    return getMockGame(gameId) ?? null;
-  }
-  if (isDegraded(GAMES_DEGRADED_SCOPE)) {
     return getMockGame(gameId) ?? null;
   }
 
@@ -702,9 +704,6 @@ async function getGameWithLevelsUncached(
   gameId: string,
 ): Promise<{ game: { id: string; title: string; description: string }; levels: GameLevelConfig[] } | null> {
   if (!hasDatabase()) {
-    return getMockGameWithLevels(gameId);
-  }
-  if (isDegraded(GAMES_DEGRADED_SCOPE)) {
     return getMockGameWithLevels(gameId);
   }
 
@@ -745,12 +744,12 @@ async function getGameWithLevelsUncached(
   }
 }
 
-const listCoursesCached = withUnstableCache(
-  listCoursesUncached,
-  ["courses"],
+const listCoursesLiveCached = withUnstableCache(
+  listCoursesLiveUncached,
+  ["courses-live", PUBLIC_DATA_CACHE_VERSION],
   { revalidate: PUBLIC_DATA_REVALIDATE_SECONDS, tags: ["courses"] },
 );
-export const listCourses = cache(listCoursesCached);
+export const listCourses = cache(listCoursesUncached);
 
 export const getCourse = cache((courseId: string) =>
   withUnstableCache(
@@ -785,17 +784,17 @@ export const listLessons = cache((courseId: string) =>
   )(),
 );
 
-const listGamesCached = withUnstableCache(
-  listGamesUncached,
-  ["games"],
+const listGamesLiveCached = withUnstableCache(
+  listGamesLiveUncached,
+  ["games-live", PUBLIC_DATA_CACHE_VERSION],
   { revalidate: PUBLIC_DATA_REVALIDATE_SECONDS, tags: ["games"] },
 );
-export const listGames = cache(listGamesCached);
+export const listGames = cache(listGamesUncached);
 
 export const getGame = cache((gameId: string) =>
   withUnstableCache(
     () => getGameUncached(gameId),
-    ["game", gameId],
+    ["game-live", PUBLIC_DATA_CACHE_VERSION, gameId],
     {
       revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
       tags: ["games", `game:${gameId}`],
@@ -806,7 +805,7 @@ export const getGame = cache((gameId: string) =>
 export const getGameWithLevels = cache((gameId: string) =>
   withUnstableCache(
     () => getGameWithLevelsUncached(gameId),
-    ["game-with-levels", gameId],
+    ["game-with-levels-live", PUBLIC_DATA_CACHE_VERSION, gameId],
     {
       revalidate: PUBLIC_DATA_REVALIDATE_SECONDS,
       tags: ["games", `game:${gameId}`],
@@ -846,10 +845,6 @@ async function getDashboardStatsUncached(
     console.log(`[cache-miss] getDashboardStats user=${userId}`);
   }
   if (!hasDatabase()) {
-    return fallbackDashboardStats();
-  }
-
-  if (isDegraded(DASHBOARD_DEGRADED_SCOPE)) {
     return fallbackDashboardStats();
   }
 
@@ -949,14 +944,14 @@ async function getDashboardStatsUncached(
     };
   } catch (error) {
     markDegraded(DASHBOARD_DEGRADED_SCOPE, error);
-    return fallbackDashboardStats();
+    throw error;
   }
 }
 
 export const getDashboardStats = (userId: string) =>
   unstable_cache(
     () => getDashboardStatsUncached(userId),
-    ["dashboard-stats", userId],
+    ["dashboard-stats", PUBLIC_DATA_CACHE_VERSION, userId],
     { revalidate: 60, tags: [`dashboard-stats:${userId}`] },
   )();
 

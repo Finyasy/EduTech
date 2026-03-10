@@ -228,18 +228,21 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   // Game complete screen (finished last level, correct or wrong)
   if (isGameComplete) {
     return (
-      <div className="rounded-3xl border border-white/70 bg-white/90 p-8 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+      <div className="rounded-[2.3rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_34%,#14346f_100%)] p-8 text-center text-white shadow-skyline">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/56">
           Game complete
         </p>
-        <h2 className="mt-4 text-2xl font-semibold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+        <h2
+          className="mt-4 text-3xl font-semibold text-white"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
           Score: {score} / {levels.length}
         </h2>
-        <p className="mt-2 text-slate-600">
+        <p className="mt-2 text-white/72">
           Total time: {(totalTimeMs / 1000).toFixed(1)}s
         </p>
         {bestStats && (
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-white/68">
             Best: {bestStats.bestScore} / {levels.length} ·{" "}
             {(bestStats.bestTimeMs / 1000).toFixed(1)}s
           </p>
@@ -249,7 +252,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
             Last level: correct answer was {level.configJson.answer}
           </p>
         )}
-        <p className="mt-4 text-sm text-slate-600">
+        <p className="mt-4 text-sm text-white/72">
           {score === levels.length
             ? "Perfect! You got them all."
             : "Nice try! Play again to improve."}
@@ -265,13 +268,13 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
               setTotalTimeMs(0);
               setLevelStartTime(Date.now());
             }}
-            className="rounded-full bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-orange-600"
+            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
           >
             Play again
           </button>
           <Link
             href="/games"
-            className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+            className="rounded-full border border-white/14 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
           >
             Back to games
           </Link>
@@ -283,7 +286,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   // Wrong answer, not last level – show Next to continue
   if (feedback === "wrong" && !isLastLevel) {
     return (
-      <div className="rounded-3xl border border-rose-200 bg-rose-50/80 p-8">
+      <div className="glass-shell rounded-[2.2rem] border border-rose-200 bg-rose-50/78 p-8 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
         <p className="text-center font-semibold text-rose-800">
           Not quite! The correct answer was: {level.configJson.answer}
         </p>
@@ -303,7 +306,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
             type="button"
             onClick={handleNext}
             disabled={isSubmitting}
-            className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900 disabled:opacity-50"
           >
             Next level
           </button>
@@ -315,7 +318,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   // Current level – prompt + choices
   if (levels.length === 0) {
     return (
-      <div className="rounded-3xl border border-white/70 bg-white/90 p-8 text-sm text-slate-600">
+      <div className="glass-shell rounded-[2.2rem] border border-white/70 p-8 text-sm text-slate-600 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
         No levels available yet.
       </div>
     );
@@ -323,7 +326,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
 
   if (!hasValidConfig) {
     return (
-      <div className="rounded-3xl border border-amber-200 bg-amber-50/80 p-8 text-sm text-amber-900">
+      <div className="glass-shell rounded-[2.2rem] border border-amber-200 bg-amber-50/78 p-8 text-sm text-amber-900 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
         This level is missing game data. Check the level configuration and try
         again.
       </div>
@@ -331,24 +334,29 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   }
 
   return (
-    <div className="rounded-3xl border border-white/70 bg-white/90 p-8">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+    <div className="glass-shell rounded-[2.35rem] border border-white/70 p-8 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
         Level {currentIndex + 1} of {levels.length}
       </p>
-      <p className="mt-4 text-xl font-semibold text-slate-900">{prompt}</p>
+      <p
+        className="mt-4 text-2xl font-semibold text-slate-950"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {prompt}
+      </p>
       {!isSignedIn && (
-        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+        <div className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
           Sign in to save attempts
-        </p>
+        </div>
       )}
       {bestStats && (
-        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+        <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           Best: {bestStats.bestScore} / {levels.length} ·{" "}
           {(bestStats.bestTimeMs / 1000).toFixed(1)}s
         </p>
       )}
       {submitError && (
-        <p className="mt-2 text-xs font-semibold text-rose-600">
+        <p className="mt-3 text-xs font-semibold text-rose-600">
           {submitError}
         </p>
       )}
@@ -387,10 +395,10 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
               disabled={feedback !== null}
               role="radio"
               aria-checked={isSelected}
-              className={`rounded-2xl border px-5 py-4 text-left text-sm font-medium transition ${
+              className={`rounded-[1.4rem] border px-5 py-4 text-left text-sm font-medium transition ${
                 feedback !== null
                   ? "cursor-default border-slate-100 bg-slate-50"
-                  : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/50"
+                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
               } ${
                 showCorrect
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900"
