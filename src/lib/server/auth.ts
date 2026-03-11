@@ -10,15 +10,21 @@ const USER_MEMORY_CACHE_STALE_TTL_MS =
     ? 30 * 60 * 1000
     : USER_MEMORY_CACHE_TTL_MS;
 const ACCESS_LOOKUP_TIMEOUT_MS = 1_200;
-const userMemoryCache = new Map<
-  string,
-  { expiresAt: number; staleAt: number; value: User }
->();
 type AccessUser = Pick<User, "id" | "email" | "name" | "role">;
-const accessUserMemoryCache = new Map<
-  string,
-  { expiresAt: number; staleAt: number; value: AccessUser }
->();
+type TimedCacheEntry<T> = { expiresAt: number; staleAt: number; value: T };
+const globalForAuthCache = globalThis as typeof globalThis & {
+  __learnBridgeUserMemoryCache?: Map<string, TimedCacheEntry<User>>;
+  __learnBridgeAccessUserMemoryCache?: Map<string, TimedCacheEntry<AccessUser>>;
+};
+const userMemoryCache =
+  globalForAuthCache.__learnBridgeUserMemoryCache ??
+  new Map<string, TimedCacheEntry<User>>();
+const accessUserMemoryCache =
+  globalForAuthCache.__learnBridgeAccessUserMemoryCache ??
+  new Map<string, TimedCacheEntry<AccessUser>>();
+
+globalForAuthCache.__learnBridgeUserMemoryCache = userMemoryCache;
+globalForAuthCache.__learnBridgeAccessUserMemoryCache = accessUserMemoryCache;
 
 const parseEmailList = (rawList: string) =>
   rawList

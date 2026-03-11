@@ -117,4 +117,115 @@ describe("teacher workspace snapshot cache", () => {
     expect(staleSnapshot.school.schoolName).toBe("Live School");
     expect(staleSnapshot.classes[0]?.id).toBe("class-live");
   });
+
+  it("falls back to memory quickly when learner creation stalls in Prisma", async () => {
+    delete process.env.DATABASE_URL;
+    const { addTeacherClassroom, addTeacherLearner } = await import(
+      "@/lib/server/teacher-store"
+    );
+
+    const classroom = await addTeacherClassroom("teacher_1", {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const learnerPromise = addTeacherLearner("teacher_1", classroom.id, {
+      name: "Asha",
+    });
+
+    await vi.advanceTimersByTimeAsync(1_801);
+    const learner = await learnerPromise;
+
+    expect(learner.classId).toBe(classroom.id);
+    expect(learner.name).toBe("Asha");
+    expect(learner.id).toMatch(/^learner-/);
+  });
+
+  it("falls back to memory quickly when learner session updates stall in Prisma", async () => {
+    delete process.env.DATABASE_URL;
+    const {
+      addTeacherClassroom,
+      addTeacherLearner,
+      advanceLearnerProgressStatus,
+    } = await import("@/lib/server/teacher-store");
+
+    const classroom = await addTeacherClassroom("teacher_1", {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    const learner = await addTeacherLearner("teacher_1", classroom.id, {
+      name: "Asha",
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const statusPromise = advanceLearnerProgressStatus({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      activityId: "activity-sorting-grouping",
+      learnerId: learner.id,
+    });
+
+    await vi.advanceTimersByTimeAsync(1_801);
+    const status = await statusPromise;
+
+    expect(status).toBe("PRACTICED_ENOUGH");
+  });
+
+  it("falls back to memory quickly when mission assignment writes stall in Prisma", async () => {
+    delete process.env.DATABASE_URL;
+    const { addTeacherClassroom, assignTeacherMissionToClass } = await import(
+      "@/lib/server/teacher-store"
+    );
+
+    const classroom = await addTeacherClassroom("teacher_1", {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const assignmentPromise = assignTeacherMissionToClass({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      courseId: "course-logic",
+      courseTitle: "AI Pattern Detectives",
+      target: "CLASS",
+      subjectId: "subject-math",
+      strandId: "strand-pre-number",
+      activityId: "activity-sorting-grouping",
+      note: "Keep the class moving.",
+    });
+
+    await vi.advanceTimersByTimeAsync(1_801);
+    const assignment = await assignmentPromise;
+
+    expect(assignment.classId).toBe(classroom.id);
+    expect(assignment.courseId).toBe("course-logic");
+    expect(assignment.isFallbackData).toBe(true);
+  });
 });

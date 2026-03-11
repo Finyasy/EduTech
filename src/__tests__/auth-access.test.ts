@@ -25,11 +25,17 @@ const originalEnv = {
   ADMIN_EMAILS: process.env.ADMIN_EMAILS,
   TEACHER_EMAILS: process.env.TEACHER_EMAILS,
 };
+const authCacheGlobal = globalThis as typeof globalThis & {
+  __learnBridgeUserMemoryCache?: Map<string, unknown>;
+  __learnBridgeAccessUserMemoryCache?: Map<string, unknown>;
+};
 
 describe("staff/admin access fallback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    authCacheGlobal.__learnBridgeUserMemoryCache?.clear();
+    authCacheGlobal.__learnBridgeAccessUserMemoryCache?.clear();
     process.env.DATABASE_URL = "postgresql://local/test";
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_local";
     process.env.CLERK_SECRET_KEY = "sk_test_local";
@@ -39,6 +45,8 @@ describe("staff/admin access fallback", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    authCacheGlobal.__learnBridgeUserMemoryCache?.clear();
+    authCacheGlobal.__learnBridgeAccessUserMemoryCache?.clear();
     if (originalEnv.DATABASE_URL === undefined) {
       delete process.env.DATABASE_URL;
     } else {
@@ -127,5 +135,61 @@ describe("staff/admin access fallback", () => {
     const access = await accessPromise;
 
     expect(access).toEqual({ ok: false, status: 403 });
+  });
+
+  it("reuses the global access cache across module reloads", async () => {
+    vi.useFakeTimers();
+    authMock.mockResolvedValue({ userId: "user_teacher" });
+    getPrismaMock.mockReturnValue({
+      user: {
+        findUnique: vi.fn().mockReturnValue(new Promise(() => {})),
+      },
+    });
+    const clerkGetUserMock = vi.fn().mockResolvedValue({
+      emailAddresses: [{ emailAddress: "teacher@example.com" }],
+      firstName: "Teacher",
+      lastName: "One",
+    });
+    clerkClientMock.mockResolvedValue({
+      users: {
+        getUser: clerkGetUserMock,
+      },
+    });
+
+    const { requireStaff } = await import("@/lib/server/auth");
+    const firstAccessPromise = requireStaff();
+
+    await vi.advanceTimersByTimeAsync(1_201);
+    const firstAccess = await firstAccessPromise;
+
+    expect(firstAccess).toEqual({
+      ok: true,
+      user: {
+        id: "user_teacher",
+        email: "teacher@example.com",
+        name: "Teacher One",
+        role: "TEACHER",
+      },
+    });
+    expect(clerkGetUserMock).toHaveBeenCalledTimes(1);
+
+    vi.resetModules();
+    authMock.mockResolvedValue({ userId: "user_teacher" });
+    getPrismaMock.mockReturnValue({
+      user: {
+        findUnique: vi.fn().mockReturnValue(new Promise(() => {})),
+      },
+    });
+    clerkClientMock.mockResolvedValue({
+      users: {
+        getUser: vi.fn().mockReturnValue(new Promise(() => {})),
+      },
+    });
+
+    const { requireStaff: requireStaffAgain } = await import("@/lib/server/auth");
+    const secondAccess = await requireStaffAgain();
+
+    expect(secondAccess).toEqual(firstAccess);
+    expect(clerkGetUserMock).toHaveBeenCalledTimes(1);
   });
 });

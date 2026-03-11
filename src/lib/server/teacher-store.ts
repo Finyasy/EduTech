@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/server/prisma";
 import {
   clearScopeDegraded,
@@ -85,6 +86,10 @@ const TEACHER_WORKSPACE_CACHE_STALE_TTL_MS =
   process.env.NODE_ENV === "development"
     ? 30 * 60 * 1000
     : 5 * 60 * 1000;
+const TEACHER_WRITE_MAX_WAIT_MS = 700;
+const TEACHER_WRITE_STATEMENT_TIMEOUT_MS = 1_200;
+const TEACHER_WRITE_TRANSACTION_TIMEOUT_MS = 1_500;
+const TEACHER_WRITE_QUERY_TIMEOUT_MS = 1_800;
 const TEACHER_WORKSPACE_DEGRADED_SCOPE = "teacher-workspace";
 const ENABLE_WORKSPACE_CACHE = process.env.NODE_ENV !== "test";
 
@@ -98,6 +103,45 @@ const withTeacherWorkspaceTimeout = <T,>(promise: Promise<T>) =>
       ),
     ),
   ]);
+
+const withTeacherWriteTimeout = <T,>(promise: Promise<T>) =>
+  Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Teacher write query timed out")),
+        TEACHER_WRITE_QUERY_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+
+type TeacherStoreDbClient =
+  | Prisma.TransactionClient
+  | NonNullable<ReturnType<typeof getPrisma>>;
+
+async function runTeacherWriteTransaction<T>(
+  action: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  const prisma = getPrisma();
+  if (!prisma) {
+    throw new Error("Persistent teacher store unavailable.");
+  }
+
+  return withTeacherWriteTimeout(
+    prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(
+          `SET LOCAL statement_timeout = ${TEACHER_WRITE_STATEMENT_TIMEOUT_MS}`,
+        );
+        return action(tx);
+      },
+      {
+        maxWait: TEACHER_WRITE_MAX_WAIT_MS,
+        timeout: TEACHER_WRITE_TRANSACTION_TIMEOUT_MS,
+      },
+    ),
+  );
+}
 
 const SUBJECTS: TeacherSubject[] = [
   {
@@ -908,8 +952,10 @@ async function upsertTeacherMissionAssignmentDatabase(input: {
   activityId?: string | null;
   learnerIds?: string[];
   note?: string | null;
-}): Promise<TeacherMissionAssignment> {
-  const prisma = getPrisma();
+},
+client?: TeacherStoreDbClient,
+): Promise<TeacherMissionAssignment> {
+  const prisma = client ?? getPrisma();
   if (!prisma) {
     return upsertTeacherMissionAssignmentMemory(input);
   }
@@ -1595,27 +1641,28 @@ export async function addTeacherLearner(
   }
 
   try {
-    const prisma = getPrisma()!;
-    const classroom = await prisma.teacherClassroom.findFirst({
-      where: { id: classId, ownerKey, isArchived: false },
-      select: { id: true },
+    const mapped = await runTeacherWriteTransaction(async (tx) => {
+      const classroom = await tx.teacherClassroom.findFirst({
+        where: { id: classId, ownerKey, isArchived: false },
+        select: { id: true },
+      });
+
+      if (!classroom) {
+        throw new Error("Class not found.");
+      }
+
+      const learner = await tx.teacherLearner.create({
+        data: {
+          classId,
+          name,
+          avatarHue: seeded % 360,
+          weeklyMinutes: 5 + (seeded % 28),
+          lastWeekMinutes: 4 + ((seeded * 3) % 22),
+        },
+      });
+
+      return mapLearnerFromDb(learner);
     });
-
-    if (!classroom) {
-      throw new Error("Class not found.");
-    }
-
-    const learner = await prisma.teacherLearner.create({
-      data: {
-        classId,
-        name,
-        avatarHue: seeded % 360,
-        weeklyMinutes: 5 + (seeded % 28),
-        lastWeekMinutes: 4 + ((seeded * 3) % 22),
-      },
-    });
-
-    const mapped = mapLearnerFromDb(learner);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return mapped;
   } catch (error) {
@@ -1651,58 +1698,60 @@ export async function advanceLearnerProgressStatus(input: {
   }
 
   try {
-    const prisma = getPrisma()!;
-    const classroom = await prisma.teacherClassroom.findFirst({
-      where: { id: input.classId, ownerKey: input.ownerKey, isArchived: false },
-      select: { id: true },
-    });
+    const next = await runTeacherWriteTransaction(async (tx) => {
+      const classroom = await tx.teacherClassroom.findFirst({
+        where: { id: input.classId, ownerKey: input.ownerKey, isArchived: false },
+        select: { id: true },
+      });
 
-    if (!classroom) {
-      throw new Error("Class not found.");
-    }
+      if (!classroom) {
+        throw new Error("Class not found.");
+      }
 
-    const learner = await prisma.teacherLearner.findFirst({
-      where: { id: input.learnerId, classId: input.classId },
-      select: { id: true },
-    });
+      const learner = await tx.teacherLearner.findFirst({
+        where: { id: input.learnerId, classId: input.classId },
+        select: { id: true },
+      });
 
-    if (!learner) {
-      throw new Error("Learner not found.");
-    }
+      if (!learner) {
+        throw new Error("Learner not found.");
+      }
 
-    const existing = await prisma.teacherSessionStatus.findUnique({
-      where: {
-        classId_learnerId_activityId: {
+      const existing = await tx.teacherSessionStatus.findUnique({
+        where: {
+          classId_learnerId_activityId: {
+            classId: input.classId,
+            learnerId: input.learnerId,
+            activityId: input.activityId,
+          },
+        },
+        select: { status: true },
+      });
+
+      const current =
+        (existing?.status as LearnerProgressStatus | undefined) ?? STATUS_DEFAULT;
+      const index = STATUS_FLOW.indexOf(current);
+      const nextStatus = STATUS_FLOW[(index + 1) % STATUS_FLOW.length];
+
+      await tx.teacherSessionStatus.upsert({
+        where: {
+          classId_learnerId_activityId: {
+            classId: input.classId,
+            learnerId: input.learnerId,
+            activityId: input.activityId,
+          },
+        },
+        update: { status: nextStatus },
+        create: {
           classId: input.classId,
           learnerId: input.learnerId,
           activityId: input.activityId,
+          status: nextStatus,
         },
-      },
-      select: { status: true },
+      });
+
+      return nextStatus;
     });
-
-    const current =
-      (existing?.status as LearnerProgressStatus | undefined) ?? STATUS_DEFAULT;
-    const index = STATUS_FLOW.indexOf(current);
-    const next = STATUS_FLOW[(index + 1) % STATUS_FLOW.length];
-
-    await prisma.teacherSessionStatus.upsert({
-      where: {
-        classId_learnerId_activityId: {
-          classId: input.classId,
-          learnerId: input.learnerId,
-          activityId: input.activityId,
-        },
-      },
-      update: { status: next },
-      create: {
-        classId: input.classId,
-        learnerId: input.learnerId,
-        activityId: input.activityId,
-        status: next,
-      },
-    });
-
     invalidateWorkspaceSnapshotCache(input.ownerKey);
     return next;
   } catch (error) {
@@ -1881,20 +1930,21 @@ export async function assignTeacherMissionToClass(input: {
   }
 
   try {
-    const prisma = getPrisma()!;
-    const classroom = await prisma.teacherClassroom.findFirst({
-      where: {
-        id: input.classId,
-        ownerKey: input.ownerKey,
-        isArchived: false,
-      },
-      select: { id: true },
-    });
-    if (!classroom) {
-      throw new Error("Class not found.");
-    }
+    const assignment = await runTeacherWriteTransaction(async (tx) => {
+      const classroom = await tx.teacherClassroom.findFirst({
+        where: {
+          id: input.classId,
+          ownerKey: input.ownerKey,
+          isArchived: false,
+        },
+        select: { id: true },
+      });
+      if (!classroom) {
+        throw new Error("Class not found.");
+      }
 
-    const assignment = await upsertTeacherMissionAssignmentDatabase(input);
+      return upsertTeacherMissionAssignmentDatabase(input, tx);
+    });
     invalidateWorkspaceSnapshotCache(input.ownerKey);
     return assignment;
   } catch (error) {
