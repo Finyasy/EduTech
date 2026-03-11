@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listCourses, listGames, getCourse, getGameWithLevels } from "@/lib/server/data";
+import {
+  getCourse,
+  getGameWithLevels,
+  listCourses,
+  listCoursesForTeacherWorkspace,
+  listGames,
+} from "@/lib/server/data";
 import { courses, games, getCourseLessons } from "@/lib/server/mock-data";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -25,6 +31,13 @@ describe("server data (mock fallback)", () => {
 
     expect(result?.id).toBe("course-logic");
     expect(result?.title).toBe("AI Pattern Detectives");
+  });
+
+  it("lists teacher workspace courses from fallback data without a database", async () => {
+    const result = await listCoursesForTeacherWorkspace();
+
+    expect(result).toHaveLength(courses.length);
+    expect(result.every((course) => course.isFallbackData)).toBe(true);
   });
 
   it("lists mock games", async () => {

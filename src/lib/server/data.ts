@@ -60,6 +60,7 @@ const hasDatabase = () =>
 const PUBLIC_DATA_REVALIDATE_SECONDS = 120;
 const PUBLIC_DATA_CACHE_VERSION = "2026-03-10-live";
 const COURSE_QUERY_TIMEOUT_MS = 2_500;
+const TEACHER_COURSE_QUERY_TIMEOUT_MS = 900;
 const GAME_QUERY_TIMEOUT_MS = 2_200;
 const COURSES_DEGRADED_SCOPE = "courses-public";
 const GAMES_DEGRADED_SCOPE = "games-public";
@@ -160,15 +161,18 @@ const getMockCourseLessonsWithFallbackFlag = (courseId: string): LessonDetail[] 
 
 const withCourseQueryTimeout = async <T,>(
   promise: Promise<T>,
+  timeoutMs = COURSE_QUERY_TIMEOUT_MS,
 ): Promise<T | null> =>
   Promise.race([
     promise,
     new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), COURSE_QUERY_TIMEOUT_MS),
+      setTimeout(() => resolve(null), timeoutMs),
     ),
   ]);
 
-async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
+async function listCoursesFromDatabaseWithTimeout(
+  timeoutMs: number,
+): Promise<CourseOverview[]> {
   const prisma = getPrisma()!;
   try {
     const dbCourses = await withCourseQueryTimeout(
@@ -194,6 +198,7 @@ async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
         },
         orderBy: { title: "asc" },
       }),
+      timeoutMs,
     );
     if (!dbCourses) {
       throw new Error("courses-query-timeout");
@@ -234,6 +239,7 @@ async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
         },
         orderBy: { title: "asc" },
       }),
+      timeoutMs,
     );
     if (!legacyCourses) {
       throw new Error("courses-legacy-query-timeout");
@@ -253,6 +259,22 @@ async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
       missionOutcome: undefined,
       sessionBlueprint: undefined,
     }));
+  }
+}
+
+async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
+  return listCoursesFromDatabaseWithTimeout(COURSE_QUERY_TIMEOUT_MS);
+}
+
+export async function listCoursesForTeacherWorkspace(): Promise<CourseOverview[]> {
+  if (!hasDatabase()) {
+    return getFallbackCourseOverviews();
+  }
+
+  try {
+    return await listCoursesFromDatabaseWithTimeout(TEACHER_COURSE_QUERY_TIMEOUT_MS);
+  } catch {
+    return getFallbackCourseOverviews();
   }
 }
 

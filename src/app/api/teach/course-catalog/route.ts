@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-  getFallbackCourseOverviews,
-  listCourses,
+  listCoursesForTeacherWorkspace,
   type CourseOverview,
 } from "@/lib/server/data";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 
-const TEACHER_COURSE_CATALOG_TIMEOUT_MS = 1_200;
 const TEACHER_COURSE_CATALOG_CACHE_TTL_MS = 60_000;
 const TEACHER_COURSE_CATALOG_CACHE_STALE_TTL_MS =
   process.env.NODE_ENV === "development"
@@ -52,16 +50,6 @@ const writeTeacherCourseCatalogCache = (value: CourseOverview[]) => {
   };
 };
 
-const withTeacherCourseCatalogTimeout = async <T,>(
-  promise: Promise<T>,
-): Promise<T | null> =>
-  Promise.race([
-    promise,
-    new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), TEACHER_COURSE_CATALOG_TIMEOUT_MS),
-    ),
-  ]);
-
 const isLiveCourseCatalog = (courses: CourseOverview[]) =>
   !courses.some((course) => course.isFallbackData);
 
@@ -85,7 +73,7 @@ export async function GET() {
   }
 
   const staleCourses = readTeacherCourseCatalogCache({ allowStale: true });
-  const courses = await withTeacherCourseCatalogTimeout(listCourses());
+  const courses = await listCoursesForTeacherWorkspace();
 
   if (courses && isLiveCourseCatalog(courses)) {
     writeTeacherCourseCatalogCache(courses);
@@ -96,9 +84,5 @@ export async function GET() {
     return toCatalogResponse(staleCourses, "stale-live");
   }
 
-  if (courses) {
-    return toCatalogResponse(courses, "fallback");
-  }
-
-  return toCatalogResponse(getFallbackCourseOverviews(), "timeout-fallback");
+  return toCatalogResponse(courses, "fallback");
 }
