@@ -118,6 +118,33 @@ async function readError(response: Response, fallback: string) {
   return fallback;
 }
 
+const mergeIncomingWorkspace = (
+  current: TeacherWorkspaceSnapshot,
+  incoming: TeacherWorkspaceSnapshot,
+): TeacherWorkspaceSnapshot => {
+  if (!incoming.isPartialData) {
+    return incoming;
+  }
+
+  const hasCurrentStatuses = Object.keys(current.sessionStatuses ?? {}).length > 0;
+  const hasCurrentAssignments = (current.assignments ?? []).length > 0;
+  const hasCurrentAssignmentAnalytics =
+    current.assignmentAnalytics.totalAssignments > 0 ||
+    current.assignmentAnalytics.assignedClassCount > 0 ||
+    current.assignmentAnalytics.recentAssignments24h > 0;
+
+  return {
+    ...incoming,
+    sessionStatuses: hasCurrentStatuses
+      ? current.sessionStatuses
+      : incoming.sessionStatuses,
+    assignments: hasCurrentAssignments ? current.assignments : incoming.assignments,
+    assignmentAnalytics: hasCurrentAssignmentAnalytics
+      ? current.assignmentAnalytics
+      : incoming.assignmentAnalytics,
+  };
+};
+
 export default function TeacherWorkspaceClient({
   initialWorkspace,
   initialTab = "teach",
@@ -128,6 +155,9 @@ export default function TeacherWorkspaceClient({
   const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot>(
     initialWorkspace,
   );
+  useEffect(() => {
+    setWorkspace((current) => mergeIncomingWorkspace(current, initialWorkspace));
+  }, [initialWorkspace]);
   const activeTab = useMemo<WorkspaceTab>(() => {
     if (pathname?.endsWith("/learners")) return "learners";
     if (pathname?.endsWith("/progress")) return "progress";

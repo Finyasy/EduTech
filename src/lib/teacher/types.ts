@@ -91,6 +91,7 @@ export type TeacherAssignmentAnalytics = {
 
 export type TeacherWorkspaceSnapshot = {
   isFallbackData?: boolean;
+  isPartialData?: boolean;
   school: TeacherSchoolSettings;
   classes: TeacherClassroom[];
   archivedClasses: TeacherClassroom[];

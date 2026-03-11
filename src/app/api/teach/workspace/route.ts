@@ -8,6 +8,7 @@ const querySchema = z.object({
   subjectId: z.string().optional(),
   strandId: z.string().optional(),
   activityId: z.string().optional(),
+  detail: z.enum(["core", "full"]).optional(),
 });
 
 export async function GET(request: Request) {
@@ -22,6 +23,7 @@ export async function GET(request: Request) {
     subjectId: url.searchParams.get("subjectId") ?? undefined,
     strandId: url.searchParams.get("strandId") ?? undefined,
     activityId: url.searchParams.get("activityId") ?? undefined,
+    detail: url.searchParams.get("detail") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -31,10 +33,18 @@ export async function GET(request: Request) {
     );
   }
 
-  const workspace = await getTeacherWorkspaceSnapshot({
-    ownerKey,
-    ...parsed.data,
-  });
+  const workspace = await getTeacherWorkspaceSnapshot(
+    {
+      ownerKey,
+      classId: parsed.data.classId,
+      subjectId: parsed.data.subjectId,
+      strandId: parsed.data.strandId,
+      activityId: parsed.data.activityId,
+    },
+    {
+      detailLevel: parsed.data.detail ?? "full",
+    },
+  );
 
   return NextResponse.json(workspace);
 }

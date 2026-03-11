@@ -118,6 +118,73 @@ describe("teacher workspace snapshot cache", () => {
     expect(staleSnapshot.classes[0]?.id).toBe("class-live");
   });
 
+  it("returns a partial workspace snapshot without waiting for secondary detail queries", async () => {
+    const createdAt = new Date("2026-03-11T00:00:00.000Z");
+    const teacherSessionStatusFindMany = vi.fn().mockReturnValue(new Promise(() => {}));
+    const assignmentQuery = vi.fn().mockReturnValue(new Promise(() => {}));
+
+    getPrismaMock.mockReturnValue({
+      teacherSchoolProfile: {
+        findUnique: vi.fn().mockResolvedValue({
+          schoolName: "Live School",
+          country: "Kenya",
+          appVersion: "4.1.0",
+          deviceId: "lb-live",
+          connectivityStatus: "OKAY",
+          contentStatus: "UP_TO_DATE",
+          supportEmail: "support@example.com",
+          schoolQrCode: "LIVE-QR",
+        }),
+      },
+      teacherClassroom: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "class-live",
+            name: "Live Class",
+            grade: "PP1",
+            teacherName: "Mary",
+            teacherPhone: "+254700000001",
+            cardColor: "bg-sky-100",
+            isArchived: false,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        ]),
+      },
+      teacherLearner: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "learner-live",
+            classId: "class-live",
+            name: "Asha",
+            avatarHue: 120,
+            weeklyMinutes: 15,
+            lastWeekMinutes: 12,
+            createdAt,
+          },
+        ]),
+      },
+      teacherSessionStatus: {
+        findMany: teacherSessionStatusFindMany,
+      },
+      $queryRaw: assignmentQuery,
+    });
+
+    const { getTeacherWorkspaceSnapshot } = await import("@/lib/server/teacher-store");
+
+    const snapshot = await getTeacherWorkspaceSnapshot(
+      { ownerKey: "teacher_1" },
+      { detailLevel: "core" },
+    );
+
+    expect(snapshot.isPartialData).toBe(true);
+    expect(snapshot.learners[0]?.id).toBe("learner-live");
+    expect(snapshot.assignments).toEqual([]);
+    expect(snapshot.assignmentAnalytics.totalAssignments).toBe(0);
+    expect(teacherSessionStatusFindMany).not.toHaveBeenCalled();
+    expect(assignmentQuery).not.toHaveBeenCalled();
+  });
+
   it("falls back to memory quickly when learner creation stalls in Prisma", async () => {
     delete process.env.DATABASE_URL;
     const { addTeacherClassroom, addTeacherLearner } = await import(

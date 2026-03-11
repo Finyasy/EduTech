@@ -28,6 +28,8 @@ type WorkspaceQuery = {
   activityId?: string;
 };
 
+type WorkspaceDetailLevel = "core" | "full";
+
 type AddClassInput = {
   name: string;
   grade: string;
@@ -346,21 +348,25 @@ const hasPersistentStore = () => Boolean(process.env.DATABASE_URL && getPrisma()
 
 const nowIso = () => new Date().toISOString();
 
-const workspaceSnapshotCacheKey = (query: WorkspaceQuery) =>
+const workspaceSnapshotCacheKey = (
+  query: WorkspaceQuery,
+  detailLevel: WorkspaceDetailLevel,
+) =>
   [
     query.ownerKey,
     query.classId ?? "",
     query.subjectId ?? "",
     query.strandId ?? "",
     query.activityId ?? "",
+    detailLevel,
   ].join("::");
 
 const readWorkspaceSnapshotCache = (
   query: WorkspaceQuery,
-  options?: { allowStale?: boolean },
+  options?: { allowStale?: boolean; detailLevel?: WorkspaceDetailLevel },
 ) => {
   if (!ENABLE_WORKSPACE_CACHE) return null;
-  const key = workspaceSnapshotCacheKey(query);
+  const key = workspaceSnapshotCacheKey(query, options?.detailLevel ?? "full");
   const entry = workspaceSnapshotCache.get(key);
   if (!entry) return null;
   const now = Date.now();
@@ -379,13 +385,17 @@ const readWorkspaceSnapshotCache = (
 const writeWorkspaceSnapshotCache = (
   query: WorkspaceQuery,
   value: TeacherWorkspaceSnapshot,
+  options?: { detailLevel?: WorkspaceDetailLevel },
 ) => {
   if (!ENABLE_WORKSPACE_CACHE) return;
-  workspaceSnapshotCache.set(workspaceSnapshotCacheKey(query), {
-    value,
-    expiresAt: Date.now() + TEACHER_WORKSPACE_CACHE_TTL_MS,
-    staleAt: Date.now() + TEACHER_WORKSPACE_CACHE_STALE_TTL_MS,
-  });
+  workspaceSnapshotCache.set(
+    workspaceSnapshotCacheKey(query, options?.detailLevel ?? "full"),
+    {
+      value,
+      expiresAt: Date.now() + TEACHER_WORKSPACE_CACHE_TTL_MS,
+      staleAt: Date.now() + TEACHER_WORKSPACE_CACHE_STALE_TTL_MS,
+    },
+  );
 };
 
 const invalidateWorkspaceSnapshotCache = (ownerKey: string) => {
@@ -1032,6 +1042,52 @@ client?: TeacherStoreDbClient,
   return mapTeacherMissionAssignmentFromDb(row);
 }
 
+type WorkspaceBaseData = {
+  school: TeacherSchoolSettings;
+  classes: TeacherClassroom[];
+  archivedClasses: TeacherClassroom[];
+  activeClassId: string | null;
+  learners: TeacherLearner[];
+  sessionActivityId: string | null;
+};
+
+const buildTeacherWorkspaceSnapshot = (
+  base: WorkspaceBaseData,
+  input?: {
+    isFallbackData?: boolean;
+    isPartialData?: boolean;
+    sessionStatuses?: Record<string, LearnerProgressStatus>;
+    assignments?: TeacherMissionAssignment[];
+  },
+): TeacherWorkspaceSnapshot => {
+  const usage = computeUsage(base.learners);
+  const assignments = input?.assignments ?? [];
+
+  return {
+    isFallbackData: input?.isFallbackData ?? false,
+    isPartialData: input?.isPartialData ?? false,
+    school: base.school,
+    classes: base.classes,
+    archivedClasses: base.archivedClasses,
+    activeClassId: base.activeClassId,
+    learners: base.learners,
+    subjects: SUBJECTS,
+    strands: STRANDS,
+    activities: ACTIVITIES,
+    sessionActivityId: base.sessionActivityId,
+    sessionStatuses: input?.sessionStatuses ?? {},
+    weeklySummary: {
+      thisWeekMinutes: usage.thisWeekMinutes,
+      lastWeekMinutes: usage.lastWeekMinutes,
+    },
+    learnerUsage: usage.learnerUsage,
+    assignments,
+    assignmentAnalytics: input?.isPartialData
+      ? emptyAssignmentAnalytics()
+      : computeAssignmentAnalytics(assignments),
+  };
+};
+
 async function getWorkspaceFromMemory(query: WorkspaceQuery): Promise<TeacherWorkspaceSnapshot> {
   const workspace = getMemoryWorkspace(query.ownerKey);
   const classes = workspace.classes.filter((item) => !item.isArchived);
@@ -1053,7 +1109,6 @@ async function getWorkspaceFromMemory(query: WorkspaceQuery): Promise<TeacherWor
     : {};
 
   const sessionStatuses = buildSessionStatusMap(learners, statusesByActivity);
-  const usage = computeUsage(learners);
 
   if (sessionActivityId) {
     workspace.sessionStatuses[sessionActivityId] = {
@@ -1062,34 +1117,37 @@ async function getWorkspaceFromMemory(query: WorkspaceQuery): Promise<TeacherWor
     };
   }
 
-  return {
-    isFallbackData: true,
-    school: workspace.school,
-    classes,
-    archivedClasses: archived,
-    activeClassId,
-    learners,
-    subjects: SUBJECTS,
-    strands: STRANDS,
-    activities: ACTIVITIES,
-    sessionActivityId,
-    sessionStatuses,
-    weeklySummary: {
-      thisWeekMinutes: usage.thisWeekMinutes,
-      lastWeekMinutes: usage.lastWeekMinutes,
+  return buildTeacherWorkspaceSnapshot(
+    {
+      school: workspace.school,
+      classes,
+      archivedClasses: archived,
+      activeClassId,
+      learners,
+      sessionActivityId,
     },
-    learnerUsage: usage.learnerUsage,
-    assignments: workspace.assignments,
-    assignmentAnalytics: computeAssignmentAnalytics(workspace.assignments),
-  };
+    {
+      isFallbackData: true,
+      sessionStatuses,
+      assignments: workspace.assignments,
+    },
+  );
 }
 
-async function getWorkspaceFromDatabase(
+async function getWorkspaceBaseFromDatabase(
   query: WorkspaceQuery,
-): Promise<TeacherWorkspaceSnapshot> {
+): Promise<WorkspaceBaseData> {
   const prisma = getPrisma();
   if (!prisma) {
-    return getWorkspaceFromMemory(query);
+    const memorySnapshot = await getWorkspaceFromMemory(query);
+    return {
+      school: memorySnapshot.school,
+      classes: memorySnapshot.classes,
+      archivedClasses: memorySnapshot.archivedClasses,
+      activeClassId: memorySnapshot.activeClassId,
+      learners: memorySnapshot.learners,
+      sessionActivityId: memorySnapshot.sessionActivityId,
+    };
   }
 
   const [school, dbClassrooms] = await Promise.all([
@@ -1124,27 +1182,50 @@ async function getWorkspaceFromDatabase(
     query.strandId,
   );
 
-  const [dbLearners, dbStatuses, assignments] = await Promise.all([
-    activeClassId
-      ? prisma.teacherLearner.findMany({
-          where: { classId: activeClassId },
-          select: {
-            id: true,
-            classId: true,
-            name: true,
-            avatarHue: true,
-            weeklyMinutes: true,
-            lastWeekMinutes: true,
-            createdAt: true,
-          },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    activeClassId && sessionActivityId
+  const dbLearners = activeClassId
+    ? await prisma.teacherLearner.findMany({
+        where: { classId: activeClassId },
+        select: {
+          id: true,
+          classId: true,
+          name: true,
+          avatarHue: true,
+          weeklyMinutes: true,
+          lastWeekMinutes: true,
+          createdAt: true,
+        },
+        orderBy: [{ createdAt: "asc" }],
+      })
+    : [];
+
+  return {
+    school,
+    classes,
+    archivedClasses,
+    activeClassId,
+    learners: dbLearners.map(mapLearnerFromDb),
+    sessionActivityId,
+  };
+}
+
+async function getWorkspaceDetailsFromDatabase(
+  query: WorkspaceQuery,
+  base: WorkspaceBaseData,
+) {
+  const prisma = getPrisma();
+  if (!prisma) {
+    return {
+      sessionStatuses: {},
+      assignments: getMemoryWorkspace(query.ownerKey).assignments,
+    };
+  }
+
+  const [dbStatuses, assignments] = await Promise.all([
+    base.activeClassId && base.sessionActivityId
       ? prisma.teacherSessionStatus.findMany({
           where: {
-            classId: activeClassId,
-            activityId: sessionActivityId,
+            classId: base.activeClassId,
+            activityId: base.sessionActivityId,
           },
           select: {
             learnerId: true,
@@ -1160,50 +1241,56 @@ async function getWorkspaceFromDatabase(
     }),
   ]);
 
-  const learners = dbLearners.map(mapLearnerFromDb);
-
   const rawStatuses: Record<string, LearnerProgressStatus> = {};
   dbStatuses.forEach((status) => {
     rawStatuses[status.learnerId] = status.status;
   });
 
-  const sessionStatuses = buildSessionStatusMap(learners, rawStatuses);
-  const usage = computeUsage(learners);
-
   return {
-    isFallbackData: false,
-    school,
-    classes,
-    archivedClasses,
-    activeClassId,
-    learners,
-    subjects: SUBJECTS,
-    strands: STRANDS,
-    activities: ACTIVITIES,
-    sessionActivityId,
-    sessionStatuses,
-    weeklySummary: {
-      thisWeekMinutes: usage.thisWeekMinutes,
-      lastWeekMinutes: usage.lastWeekMinutes,
-    },
-    learnerUsage: usage.learnerUsage,
+    sessionStatuses: buildSessionStatusMap(base.learners, rawStatuses),
     assignments,
-    assignmentAnalytics: computeAssignmentAnalytics(assignments),
   };
+}
+
+async function getWorkspaceFromDatabase(
+  query: WorkspaceQuery,
+  options?: { detailLevel?: WorkspaceDetailLevel },
+): Promise<TeacherWorkspaceSnapshot> {
+  const detailLevel = options?.detailLevel ?? "full";
+  const base = await getWorkspaceBaseFromDatabase(query);
+
+  if (detailLevel === "core") {
+    return buildTeacherWorkspaceSnapshot(base, {
+      isPartialData: true,
+      sessionStatuses: {},
+      assignments: [],
+    });
+  }
+
+  const details = await getWorkspaceDetailsFromDatabase(query, base);
+  return buildTeacherWorkspaceSnapshot(base, {
+    sessionStatuses: details.sessionStatuses,
+    assignments: details.assignments,
+  });
 }
 
 export async function getTeacherWorkspaceSnapshot(
   query: WorkspaceQuery,
+  options?: { detailLevel?: WorkspaceDetailLevel },
 ): Promise<TeacherWorkspaceSnapshot> {
-  const cached = readWorkspaceSnapshotCache(query);
+  const detailLevel = options?.detailLevel ?? "full";
+  const cached = readWorkspaceSnapshotCache(query, { detailLevel });
   if (cached) {
     return cached;
   }
-  const staleCached = readWorkspaceSnapshotCache(query, { allowStale: true });
+  const staleCached = readWorkspaceSnapshotCache(query, {
+    allowStale: true,
+    detailLevel,
+  });
 
   if (!hasPersistentStore()) {
     const snapshot = await getWorkspaceFromMemory(query);
-    writeWorkspaceSnapshotCache(query, snapshot);
+    writeWorkspaceSnapshotCache(query, snapshot, { detailLevel });
     return snapshot;
   }
 
@@ -1212,13 +1299,15 @@ export async function getTeacherWorkspaceSnapshot(
       return staleCached;
     }
     const snapshot = await getWorkspaceFromMemory(query);
-    writeWorkspaceSnapshotCache(query, snapshot);
+    writeWorkspaceSnapshotCache(query, snapshot, { detailLevel });
     return snapshot;
   }
   try {
-    const snapshot = await withTeacherWorkspaceTimeout(getWorkspaceFromDatabase(query));
+    const snapshot = await withTeacherWorkspaceTimeout(
+      getWorkspaceFromDatabase(query, { detailLevel }),
+    );
     clearScopeDegraded(TEACHER_WORKSPACE_DEGRADED_SCOPE);
-    writeWorkspaceSnapshotCache(query, snapshot);
+    writeWorkspaceSnapshotCache(query, snapshot, { detailLevel });
     return snapshot;
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
@@ -1230,7 +1319,7 @@ export async function getTeacherWorkspaceSnapshot(
         return staleCached;
       }
       const snapshot = await getWorkspaceFromMemory(query);
-      writeWorkspaceSnapshotCache(query, snapshot);
+      writeWorkspaceSnapshotCache(query, snapshot, { detailLevel });
       return snapshot;
     }
     throw error;

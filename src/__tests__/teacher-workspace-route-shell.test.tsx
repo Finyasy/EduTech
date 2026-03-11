@@ -23,6 +23,9 @@ vi.mock("@/components/teacher/TeacherWorkspaceClient", () => ({
       <span data-testid="base-path">{basePath}</span>
       <span data-testid="school-name">{initialWorkspace.school.schoolName}</span>
       <span data-testid="course-count">{courseCatalog.length}</span>
+      <span data-testid="workspace-partial">
+        {String(Boolean(initialWorkspace.isPartialData))}
+      </span>
     </div>
   ),
 }));
@@ -113,7 +116,7 @@ describe("TeacherWorkspaceRouteShell", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/teach/workspace?classId=class-1",
+        "/api/teach/workspace?classId=class-1&detail=core",
         expect.objectContaining({ cache: "no-store" }),
       ),
     );
@@ -233,7 +236,7 @@ describe("TeacherWorkspaceRouteShell", () => {
         });
       }
 
-      return new Promise((_resolve) => {
+      return new Promise(() => {
         // Keep the live workspace request pending so the test proves cached render.
       });
     });
@@ -244,5 +247,94 @@ describe("TeacherWorkspaceRouteShell", () => {
     expect(await screen.findByTestId("teacher-workspace-client")).toBeInTheDocument();
     expect(screen.getByTestId("school-name")).toHaveTextContent("Kwa Njenga");
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it("hydrates a partial workspace with full details after the first paint", async () => {
+    let releaseFullWorkspace!: () => void;
+    const fullWorkspaceGate = new Promise<void>((resolve) => {
+      releaseFullWorkspace = resolve;
+    });
+
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/teach/course-catalog")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => makeCourseCatalog(),
+        });
+      }
+
+      if (url.includes("detail=core")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () =>
+            makeWorkspace({
+              isPartialData: true,
+            }),
+        });
+      }
+
+      return fullWorkspaceGate.then(
+        () =>
+          ({
+            ok: true,
+            json: async () =>
+              makeWorkspace({
+                sessionStatuses: { learner_1: "NEED_MORE_PRACTICE" },
+                assignments: [
+                  {
+                    id: "assignment-1",
+                    classId: "class-1",
+                    courseId: "course-logic",
+                    courseTitle: "AI Pattern Detectives",
+                    target: "CLASS",
+                    subjectId: "subject-math",
+                    strandId: "strand-pre-number",
+                    activityId: "activity-sorting-grouping",
+                    learnerIds: [],
+                    note: null,
+                    status: "ASSIGNED",
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                ],
+                assignmentAnalytics: {
+                  totalAssignments: 1,
+                  recentAssignments24h: 1,
+                  assignedClassCount: 1,
+                  byTarget: { CLASS: 1, NEEDS_PRACTICE: 0 },
+                  byStatus: { ASSIGNED: 1, IN_PROGRESS: 0, COMPLETED: 0 },
+                },
+              }),
+          }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TeacherWorkspaceRouteShell basePath="/teach" />);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/teach/workspace?classId=class-1&detail=core",
+        expect.objectContaining({ cache: "no-store" }),
+      ),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-partial")).toHaveTextContent("true"),
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/teach/workspace?classId=class-1",
+        expect.objectContaining({ cache: "no-store" }),
+      ),
+    );
+
+    releaseFullWorkspace();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-partial")).toHaveTextContent("false"),
+    );
   });
 });
