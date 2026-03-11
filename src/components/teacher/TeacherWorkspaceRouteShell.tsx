@@ -75,6 +75,24 @@ const mergeWorkspaceSnapshot = (
   };
 };
 
+const emptyAssignmentAnalytics = () => ({
+  totalAssignments: 0,
+  recentAssignments24h: 0,
+  assignedClassCount: 0,
+  byTarget: { CLASS: 0, NEEDS_PRACTICE: 0 },
+  byStatus: { ASSIGNED: 0, IN_PROGRESS: 0, COMPLETED: 0 },
+});
+
+const normalizeWorkspaceSnapshot = (
+  current: TeacherWorkspaceSnapshot | null,
+  incoming: TeacherWorkspaceSnapshot,
+) =>
+  mergeWorkspaceSnapshot(current, {
+    ...incoming,
+    assignments: Array.isArray(incoming.assignments) ? incoming.assignments : [],
+    assignmentAnalytics: incoming.assignmentAnalytics ?? emptyAssignmentAnalytics(),
+  });
+
 async function readWorkspaceError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({}));
   if (typeof payload?.error === "string" && payload.error.length > 0) {
@@ -102,6 +120,7 @@ export default function TeacherWorkspaceRouteShell({
   const workspaceRef = useRef<TeacherWorkspaceSnapshot | null>(
     initialCachedWorkspaceRef.current,
   );
+  const detailRequestIdRef = useRef(0);
   const detailHydrationInFlightRef = useRef(false);
   const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot | null>(
     () => initialCachedWorkspaceRef.current,
@@ -118,18 +137,37 @@ export default function TeacherWorkspaceRouteShell({
     workspaceRef.current = workspace;
   }, [workspace]);
 
-  const buildWorkspaceUrl = useCallback(
-    (detailLevel: "core" | "full") => {
+  const buildWorkspaceUrl = useCallback((detailLevel: "core" | "full") => {
+    const query = new URLSearchParams(initialQueryRef.current);
+    if (detailLevel === "core") {
+      query.set("detail", "core");
+    } else {
+      query.delete("detail");
+    }
+    const serialized = query.toString();
+    return `/api/teach/workspace${serialized ? `?${serialized}` : ""}`;
+  }, []);
+
+  const buildWorkspaceDetailsUrl = useCallback(
+    (type: "session-statuses" | "assignments") => {
       const query = new URLSearchParams(initialQueryRef.current);
-      if (detailLevel === "core") {
-        query.set("detail", "core");
-      } else {
-        query.delete("detail");
-      }
       const serialized = query.toString();
-      return `/api/teach/workspace${serialized ? `?${serialized}` : ""}`;
+      return `/api/teach/workspace/${type}${serialized ? `?${serialized}` : ""}`;
     },
     [],
+  );
+
+  const mergeWorkspacePatch = useCallback(
+    (patch: Partial<TeacherWorkspaceSnapshot>) => {
+      const nextWorkspace = {
+        ...(workspaceRef.current ?? {}),
+        ...patch,
+      } as TeacherWorkspaceSnapshot;
+      writeCachedWorkspace(basePath, nextWorkspace);
+      workspaceRef.current = nextWorkspace;
+      setWorkspace(nextWorkspace);
+    },
+    [basePath],
   );
 
   const loadWorkspaceDetails = useCallback(async () => {
@@ -137,50 +175,82 @@ export default function TeacherWorkspaceRouteShell({
       return;
     }
 
+    const detailRequestId = ++detailRequestIdRef.current;
+    let pendingRequests = 2;
+
     detailHydrationInFlightRef.current = true;
     setIsHydratingDetails(true);
 
-    try {
-      const response = await fetch(buildWorkspaceUrl("full"), {
-        cache: "no-store",
-      });
-      if (!response.ok) {
+    const settle = () => {
+      if (detailRequestId !== detailRequestIdRef.current) {
         return;
       }
-
-      const data = (await response.json()) as TeacherWorkspaceSnapshot;
-      const nextWorkspace = mergeWorkspaceSnapshot(workspaceRef.current, {
-        ...data,
-        assignments: Array.isArray(data.assignments) ? data.assignments : [],
-        assignmentAnalytics: data.assignmentAnalytics ?? {
-          totalAssignments: 0,
-          recentAssignments24h: 0,
-          assignedClassCount: 0,
-          byTarget: { CLASS: 0, NEEDS_PRACTICE: 0 },
-          byStatus: { ASSIGNED: 0, IN_PROGRESS: 0, COMPLETED: 0 },
-        },
-      });
-      writeCachedWorkspace(basePath, nextWorkspace);
-      workspaceRef.current = nextWorkspace;
-      setWorkspace(nextWorkspace);
-    } catch {
-      // Keep the lighter workspace snapshot if detail hydration fails.
-    } finally {
+      pendingRequests -= 1;
+      if (pendingRequests > 0) {
+        return;
+      }
       detailHydrationInFlightRef.current = false;
       setIsHydratingDetails(false);
-    }
-  }, [basePath, buildWorkspaceUrl]);
+      if (workspaceRef.current?.isPartialData) {
+        mergeWorkspacePatch({ isPartialData: false });
+      }
+    };
+
+    void fetch(buildWorkspaceDetailsUrl("session-statuses"), {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok || detailRequestId !== detailRequestIdRef.current) {
+          return;
+        }
+        const data = (await response.json()) as Pick<
+          TeacherWorkspaceSnapshot,
+          "sessionStatuses"
+        >;
+        mergeWorkspacePatch({
+          sessionStatuses: data.sessionStatuses ?? {},
+        });
+      })
+      .catch(() => {
+        // Keep the lighter workspace snapshot if session hydration fails.
+      })
+      .finally(settle);
+
+    void fetch(buildWorkspaceDetailsUrl("assignments"), {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok || detailRequestId !== detailRequestIdRef.current) {
+          return;
+        }
+        const data = (await response.json()) as Pick<
+          TeacherWorkspaceSnapshot,
+          "assignments" | "assignmentAnalytics"
+        >;
+        mergeWorkspacePatch({
+          assignments: Array.isArray(data.assignments) ? data.assignments : [],
+          assignmentAnalytics:
+            data.assignmentAnalytics ?? emptyAssignmentAnalytics(),
+        });
+      })
+      .catch(() => {
+        // Keep the lighter workspace snapshot if assignment hydration fails.
+      })
+      .finally(settle);
+  }, [buildWorkspaceDetailsUrl, mergeWorkspacePatch]);
 
   const loadWorkspace = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    detailRequestIdRef.current += 1;
+    detailHydrationInFlightRef.current = false;
+    setIsHydratingDetails(false);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const detailLevel = workspaceRef.current ? "full" : "core";
 
     try {
-      const response = await fetch(buildWorkspaceUrl(detailLevel), {
+      const response = await fetch(buildWorkspaceUrl("core"), {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -192,20 +262,8 @@ export default function TeacherWorkspaceRouteShell({
       }
 
       const data = (await response.json()) as TeacherWorkspaceSnapshot;
-      const nextWorkspace = mergeWorkspaceSnapshot(workspaceRef.current, {
-        ...data,
-        assignments: Array.isArray(data.assignments) ? data.assignments : [],
-        assignmentAnalytics: data.assignmentAnalytics ?? {
-          totalAssignments: 0,
-          recentAssignments24h: 0,
-          assignedClassCount: 0,
-          byTarget: { CLASS: 0, NEEDS_PRACTICE: 0 },
-          byStatus: { ASSIGNED: 0, IN_PROGRESS: 0, COMPLETED: 0 },
-        },
-      });
-      writeCachedWorkspace(basePath, nextWorkspace);
-      workspaceRef.current = nextWorkspace;
-      setWorkspace(nextWorkspace);
+      const nextWorkspace = normalizeWorkspaceSnapshot(workspaceRef.current, data);
+      mergeWorkspacePatch(nextWorkspace);
 
       if (data.isPartialData) {
         void loadWorkspaceDetails();
@@ -222,7 +280,7 @@ export default function TeacherWorkspaceRouteShell({
       clearTimeout(timer);
       setIsLoading(false);
     }
-  }, [basePath, buildWorkspaceUrl, loadWorkspaceDetails]);
+  }, [buildWorkspaceUrl, loadWorkspaceDetails, mergeWorkspacePatch]);
 
   const loadCourseCatalog = useCallback(async () => {
     try {

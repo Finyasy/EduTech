@@ -83,6 +83,7 @@ export type TeacherAssignmentAnalyticsReport = {
 };
 
 const TEACHER_WORKSPACE_QUERY_TIMEOUT_MS = 4_000;
+const TEACHER_WORKSPACE_DETAIL_QUERY_TIMEOUT_MS = 2_500;
 const TEACHER_WORKSPACE_CACHE_TTL_MS = 5_000;
 const TEACHER_WORKSPACE_CACHE_STALE_TTL_MS =
   process.env.NODE_ENV === "development"
@@ -102,6 +103,17 @@ const withTeacherWorkspaceTimeout = <T,>(promise: Promise<T>) =>
       setTimeout(
         () => reject(new Error("Teacher workspace query timed out")),
         TEACHER_WORKSPACE_QUERY_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+
+const withTeacherWorkspaceDetailTimeout = <T,>(promise: Promise<T>) =>
+  Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Teacher workspace detail query timed out")),
+        TEACHER_WORKSPACE_DETAIL_QUERY_TIMEOUT_MS,
       ),
     ),
   ]);
@@ -343,6 +355,25 @@ const workspaceSnapshotCache = new Map<
   string,
   { expiresAt: number; staleAt: number; value: TeacherWorkspaceSnapshot }
 >();
+const workspaceSessionStatusesCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    staleAt: number;
+    value: Pick<TeacherWorkspaceSnapshot, "sessionStatuses">;
+  }
+>();
+const workspaceAssignmentsCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    staleAt: number;
+    value: Pick<
+      TeacherWorkspaceSnapshot,
+      "assignments" | "assignmentAnalytics"
+    >;
+  }
+>();
 
 const hasPersistentStore = () => Boolean(process.env.DATABASE_URL && getPrisma());
 
@@ -360,6 +391,81 @@ const workspaceSnapshotCacheKey = (
     query.activityId ?? "",
     detailLevel,
   ].join("::");
+
+const workspaceSessionStatusesCacheKey = (query: WorkspaceQuery) =>
+  [
+    query.ownerKey,
+    query.classId ?? "",
+    query.subjectId ?? "",
+    query.strandId ?? "",
+    query.activityId ?? "",
+  ].join("::");
+
+const readWorkspaceSessionStatusesCache = (
+  query: WorkspaceQuery,
+  options?: { allowStale?: boolean },
+) => {
+  if (!ENABLE_WORKSPACE_CACHE) return null;
+  const entry = workspaceSessionStatusesCache.get(
+    workspaceSessionStatusesCacheKey(query),
+  );
+  if (!entry) return null;
+  const now = Date.now();
+  if (entry.expiresAt > now) {
+    return entry.value;
+  }
+  if (options?.allowStale && entry.staleAt > now) {
+    return entry.value;
+  }
+  if (entry.staleAt <= now) {
+    workspaceSessionStatusesCache.delete(workspaceSessionStatusesCacheKey(query));
+  }
+  return null;
+};
+
+const writeWorkspaceSessionStatusesCache = (
+  query: WorkspaceQuery,
+  value: Pick<TeacherWorkspaceSnapshot, "sessionStatuses">,
+) => {
+  if (!ENABLE_WORKSPACE_CACHE) return;
+  workspaceSessionStatusesCache.set(workspaceSessionStatusesCacheKey(query), {
+    value,
+    expiresAt: Date.now() + TEACHER_WORKSPACE_CACHE_TTL_MS,
+    staleAt: Date.now() + TEACHER_WORKSPACE_CACHE_STALE_TTL_MS,
+  });
+};
+
+const readWorkspaceAssignmentsCache = (
+  ownerKey: string,
+  options?: { allowStale?: boolean },
+) => {
+  if (!ENABLE_WORKSPACE_CACHE) return null;
+  const entry = workspaceAssignmentsCache.get(ownerKey);
+  if (!entry) return null;
+  const now = Date.now();
+  if (entry.expiresAt > now) {
+    return entry.value;
+  }
+  if (options?.allowStale && entry.staleAt > now) {
+    return entry.value;
+  }
+  if (entry.staleAt <= now) {
+    workspaceAssignmentsCache.delete(ownerKey);
+  }
+  return null;
+};
+
+const writeWorkspaceAssignmentsCache = (
+  ownerKey: string,
+  value: Pick<TeacherWorkspaceSnapshot, "assignments" | "assignmentAnalytics">,
+) => {
+  if (!ENABLE_WORKSPACE_CACHE) return;
+  workspaceAssignmentsCache.set(ownerKey, {
+    value,
+    expiresAt: Date.now() + TEACHER_WORKSPACE_CACHE_TTL_MS,
+    staleAt: Date.now() + TEACHER_WORKSPACE_CACHE_STALE_TTL_MS,
+  });
+};
 
 const readWorkspaceSnapshotCache = (
   query: WorkspaceQuery,
@@ -405,6 +511,12 @@ const invalidateWorkspaceSnapshotCache = (ownerKey: string) => {
       workspaceSnapshotCache.delete(key);
     }
   }
+  for (const key of workspaceSessionStatusesCache.keys()) {
+    if (key.startsWith(`${ownerKey}::`)) {
+      workspaceSessionStatusesCache.delete(key);
+    }
+  }
+  workspaceAssignmentsCache.delete(ownerKey);
 };
 
 const toIso = (value: Date | string) =>
@@ -1321,6 +1433,130 @@ export async function getTeacherWorkspaceSnapshot(
       const snapshot = await getWorkspaceFromMemory(query);
       writeWorkspaceSnapshotCache(query, snapshot, { detailLevel });
       return snapshot;
+    }
+    throw error;
+  }
+}
+
+export async function getTeacherWorkspaceSessionStatuses(
+  query: WorkspaceQuery,
+): Promise<Pick<TeacherWorkspaceSnapshot, "sessionStatuses">> {
+  const cached = readWorkspaceSessionStatusesCache(query);
+  if (cached) {
+    return cached;
+  }
+
+  const staleCached = readWorkspaceSessionStatusesCache(query, {
+    allowStale: true,
+  });
+
+  if (!hasPersistentStore()) {
+    const snapshot = await getWorkspaceFromMemory(query);
+    const result = { sessionStatuses: snapshot.sessionStatuses };
+    writeWorkspaceSessionStatusesCache(query, result);
+    return result;
+  }
+
+  try {
+    const base = await withTeacherWorkspaceDetailTimeout(
+      getWorkspaceBaseFromDatabase(query),
+    );
+
+    if (!base.activeClassId || !base.sessionActivityId) {
+      const result = { sessionStatuses: {} };
+      writeWorkspaceSessionStatusesCache(query, result);
+      return result;
+    }
+
+    const prisma = getPrisma();
+    if (!prisma) {
+      const snapshot = await getWorkspaceFromMemory(query);
+      const result = { sessionStatuses: snapshot.sessionStatuses };
+      writeWorkspaceSessionStatusesCache(query, result);
+      return result;
+    }
+
+    const dbStatuses = await withTeacherWorkspaceDetailTimeout(
+      prisma.teacherSessionStatus.findMany({
+        where: {
+          classId: base.activeClassId,
+          activityId: base.sessionActivityId,
+        },
+        select: {
+          learnerId: true,
+          status: true,
+        },
+      }),
+    );
+
+    const rawStatuses: Record<string, LearnerProgressStatus> = {};
+    dbStatuses.forEach((status) => {
+      rawStatuses[status.learnerId] = status.status;
+    });
+
+    const result = {
+      sessionStatuses: buildSessionStatusMap(base.learners, rawStatuses),
+    };
+    writeWorkspaceSessionStatusesCache(query, result);
+    return result;
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      if (staleCached) {
+        return staleCached;
+      }
+      const snapshot = await getWorkspaceFromMemory(query);
+      const result = { sessionStatuses: snapshot.sessionStatuses };
+      writeWorkspaceSessionStatusesCache(query, result);
+      return result;
+    }
+    throw error;
+  }
+}
+
+export async function getTeacherWorkspaceAssignments(
+  query: WorkspaceQuery,
+): Promise<Pick<TeacherWorkspaceSnapshot, "assignments" | "assignmentAnalytics">> {
+  const cached = readWorkspaceAssignmentsCache(query.ownerKey);
+  if (cached) {
+    return cached;
+  }
+
+  const staleCached = readWorkspaceAssignmentsCache(query.ownerKey, {
+    allowStale: true,
+  });
+
+  if (!hasPersistentStore()) {
+    const snapshot = await getWorkspaceFromMemory(query);
+    const result = {
+      assignments: snapshot.assignments,
+      assignmentAnalytics: snapshot.assignmentAnalytics,
+    };
+    writeWorkspaceAssignmentsCache(query.ownerKey, result);
+    return result;
+  }
+
+  try {
+    const assignments = await withTeacherWorkspaceDetailTimeout(
+      listTeacherMissionAssignmentsFromDatabase(query.ownerKey),
+    );
+    const result = {
+      assignments,
+      assignmentAnalytics: computeAssignmentAnalytics(assignments),
+    };
+    writeWorkspaceAssignmentsCache(query.ownerKey, result);
+    return result;
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      if (staleCached) {
+        return staleCached;
+      }
+      const snapshot = await getWorkspaceFromMemory(query);
+      const result = {
+        assignments: snapshot.assignments,
+        assignmentAnalytics: snapshot.assignmentAnalytics,
+      };
+      writeWorkspaceAssignmentsCache(query.ownerKey, result);
+      return result;
     }
     throw error;
   }

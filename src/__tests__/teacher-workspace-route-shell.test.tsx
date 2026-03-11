@@ -250,9 +250,13 @@ describe("TeacherWorkspaceRouteShell", () => {
   });
 
   it("hydrates a partial workspace with full details after the first paint", async () => {
-    let releaseFullWorkspace!: () => void;
-    const fullWorkspaceGate = new Promise<void>((resolve) => {
-      releaseFullWorkspace = resolve;
+    let releaseSessionStatuses!: () => void;
+    const sessionStatusesGate = new Promise<void>((resolve) => {
+      releaseSessionStatuses = resolve;
+    });
+    let releaseAssignments!: () => void;
+    const assignmentsGate = new Promise<void>((resolve) => {
+      releaseAssignments = resolve;
     });
 
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -274,13 +278,24 @@ describe("TeacherWorkspaceRouteShell", () => {
         });
       }
 
-      return fullWorkspaceGate.then(
+      if (url.includes("/api/teach/workspace/session-statuses")) {
+        return sessionStatusesGate.then(
+          () =>
+            ({
+              ok: true,
+              json: async () => ({
+                sessionStatuses: { learner_1: "NEED_MORE_PRACTICE" as const },
+              }),
+            }),
+        );
+      }
+
+      return assignmentsGate.then(
         () =>
           ({
             ok: true,
             json: async () =>
-              makeWorkspace({
-                sessionStatuses: { learner_1: "NEED_MORE_PRACTICE" },
+              ({
                 assignments: [
                   {
                     id: "assignment-1",
@@ -326,12 +341,25 @@ describe("TeacherWorkspaceRouteShell", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/teach/workspace?classId=class-1",
+        "/api/teach/workspace/session-statuses?classId=class-1",
         expect.objectContaining({ cache: "no-store" }),
       ),
     );
 
-    releaseFullWorkspace();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/teach/workspace/assignments?classId=class-1",
+        expect.objectContaining({ cache: "no-store" }),
+      ),
+    );
+
+    releaseSessionStatuses();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-partial")).toHaveTextContent("true"),
+    );
+
+    releaseAssignments();
 
     await waitFor(() =>
       expect(screen.getByTestId("workspace-partial")).toHaveTextContent("false"),
