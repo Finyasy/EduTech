@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TeacherWorkspaceClient from "@/components/teacher/TeacherWorkspaceClient";
-import type { TeacherWorkspaceSnapshot } from "@/lib/teacher/types";
 import type { CourseOverview } from "@/lib/server/data";
+import type { TeacherWorkspaceSnapshot } from "@/lib/teacher/types";
 
 async function readWorkspaceError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({}));
@@ -28,6 +28,8 @@ export default function TeacherWorkspaceRouteShell({
   const initialQueryRef = useRef(initialQuery);
   const didBootstrapRef = useRef(false);
   const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot | null>(null);
+  const [resolvedCourseCatalog, setResolvedCourseCatalog] =
+    useState<CourseOverview[]>(courseCatalog);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,13 +82,34 @@ export default function TeacherWorkspaceRouteShell({
     }
   }, []);
 
+  const loadCourseCatalog = useCallback(async () => {
+    try {
+      const response = await fetch("/api/teach/course-catalog", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        return;
+      }
+
+      const data = (await response.json()) as CourseOverview[];
+      if (!Array.isArray(data) || data.length === 0) {
+        return;
+      }
+
+      setResolvedCourseCatalog(data);
+    } catch {
+      // Keep the instant local catalog when live refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     if (didBootstrapRef.current) {
       return;
     }
     didBootstrapRef.current = true;
     void loadWorkspace();
-  }, [loadWorkspace]);
+    void loadCourseCatalog();
+  }, [loadCourseCatalog, loadWorkspace]);
 
   if (isLoading && !workspace) {
     return (
@@ -138,7 +161,7 @@ export default function TeacherWorkspaceRouteShell({
       <TeacherWorkspaceClient
         initialWorkspace={workspace}
         basePath={basePath}
-        courseCatalog={courseCatalog}
+        courseCatalog={resolvedCourseCatalog}
       />
     </>
   );

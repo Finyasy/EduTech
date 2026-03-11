@@ -15,6 +15,18 @@ const parseAdminEmails = () =>
 const parseTeacherEmails = () =>
   parseEmailList(process.env.TEACHER_EMAILS ?? "");
 
+const getRoleForEmail = (email: string) => {
+  const normalizedEmail = email.toLowerCase();
+  const adminEmails = parseAdminEmails();
+  const teacherEmails = parseTeacherEmails();
+
+  return adminEmails.includes(normalizedEmail)
+    ? "ADMIN"
+    : teacherEmails.includes(normalizedEmail)
+      ? "TEACHER"
+      : "STUDENT";
+};
+
 export type AuthState =
   | { status: "disabled"; userId: null }
   | { status: "timed_out"; userId: null }
@@ -80,13 +92,29 @@ export async function ensureUserWithTimeout(timeoutMs: number) {
 }
 
 async function ensureUserById(userId: string) {
-  if (!process.env.CLERK_SECRET_KEY) {
-    return null;
-  }
-
   const prisma = getPrisma();
   if (!prisma) {
     return null;
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (existingUser?.email) {
+    const role = getRoleForEmail(existingUser.email);
+    if (existingUser.role === role) {
+      return existingUser;
+    }
+
+    return prisma.user.update({
+      where: { id: userId },
+      data: { role },
+    });
+  }
+
+  if (!process.env.CLERK_SECRET_KEY) {
+    return existingUser;
   }
 
   const client = await clerkClient();
@@ -101,14 +129,7 @@ async function ensureUserById(userId: string) {
     [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
     null;
 
-  const normalizedEmail = primaryEmail.toLowerCase();
-  const adminEmails = parseAdminEmails();
-  const teacherEmails = parseTeacherEmails();
-  const role = adminEmails.includes(normalizedEmail)
-    ? "ADMIN"
-    : teacherEmails.includes(normalizedEmail)
-      ? "TEACHER"
-      : "STUDENT";
+  const role = getRoleForEmail(primaryEmail);
 
   return prisma.user.upsert({
     where: { id: userId },

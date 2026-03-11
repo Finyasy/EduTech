@@ -121,7 +121,7 @@ const isCourseMetadataUnavailableError = (error: unknown) => {
   return false;
 };
 
-const getMockCourseOverviews = (): CourseOverview[] =>
+export const getFallbackCourseOverviews = (): CourseOverview[] =>
   mockCourses.map((course) => {
     const courseLessons = getMockCourseLessons(course.id);
     return {
@@ -258,7 +258,7 @@ async function listCoursesLiveUncached(): Promise<CourseOverview[]> {
 
 async function listCoursesUncached(): Promise<CourseOverview[]> {
   if (!hasDatabase()) {
-    return getMockCourseOverviews();
+    return getFallbackCourseOverviews();
   }
 
   try {
@@ -267,7 +267,7 @@ async function listCoursesUncached(): Promise<CourseOverview[]> {
     return courses;
   } catch (error) {
     markDegraded(COURSES_DEGRADED_SCOPE, error);
-    return getMockCourseOverviews();
+    return getFallbackCourseOverviews();
   }
 }
 

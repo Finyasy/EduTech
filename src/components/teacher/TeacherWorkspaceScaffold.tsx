@@ -8,7 +8,7 @@ import {
   getCourseCurriculumPlan,
 } from "@/lib/curriculum/learning-path";
 import { requireStaff } from "@/lib/server/auth";
-import { listCourses, type CourseOverview } from "@/lib/server/data";
+import { getFallbackCourseOverviews } from "@/lib/server/data";
 import TeacherWorkspaceRouteShell from "./TeacherWorkspaceRouteShell";
 
 type TeacherWorkspaceScaffoldProps = {
@@ -50,10 +50,9 @@ export default async function TeacherWorkspaceScaffold({
   }
 
   const isAdmin = staffUser.role === "ADMIN";
-  const courses = await listCourses().catch(() => [] as CourseOverview[]);
+  const courses = getFallbackCourseOverviews();
   const orderedCourses = [...courses].sort(compareCoursesByCurriculumPlan);
   const missionPreview = orderedCourses.slice(0, 3);
-  const hasCourseFallback = courses.some((course) => course.isFallbackData);
   const title =
     variant === "admin" ? "Admin Teaching Console" : "Teacher Workspace";
   const subtitle =
@@ -183,12 +182,6 @@ export default async function TeacherWorkspaceScaffold({
               </Link>
             </div>
           </div>
-
-          {hasCourseFallback && (
-            <p className="mt-4 inline-flex items-center rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100">
-              Course catalog data may be delayed. Showing fallback mission alignment.
-            </p>
-          )}
 
           {missionPreview.length > 0 && (
             <div className="mt-5 grid gap-3 lg:grid-cols-3">

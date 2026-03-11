@@ -781,24 +781,39 @@ async function ensureSchoolProfile(ownerKey: string) {
     return ensureSchoolSettings(ownerKey);
   }
 
-  const defaults = ensureSchoolSettings(ownerKey);
-  const profile = await prisma.teacherSchoolProfile.upsert({
+  const existingProfile = await prisma.teacherSchoolProfile.findUnique({
     where: { ownerKey },
-    update: {},
-    create: {
-      ownerKey,
-      schoolName: defaults.schoolName,
-      country: defaults.country,
-      appVersion: defaults.appVersion,
-      deviceId: defaults.deviceId,
-      connectivityStatus: defaults.connectivityStatus,
-      contentStatus: defaults.contentStatus,
-      supportEmail: defaults.supportEmail,
-      schoolQrCode: defaults.schoolQrCode,
-    },
   });
+  if (existingProfile) {
+    return mapSchoolFromDb(existingProfile);
+  }
 
-  return mapSchoolFromDb(profile);
+  const defaults = ensureSchoolSettings(ownerKey);
+  try {
+    const profile = await prisma.teacherSchoolProfile.create({
+      data: {
+        ownerKey,
+        schoolName: defaults.schoolName,
+        country: defaults.country,
+        appVersion: defaults.appVersion,
+        deviceId: defaults.deviceId,
+        connectivityStatus: defaults.connectivityStatus,
+        contentStatus: defaults.contentStatus,
+        supportEmail: defaults.supportEmail,
+        schoolQrCode: defaults.schoolQrCode,
+      },
+    });
+
+    return mapSchoolFromDb(profile);
+  } catch (error) {
+    const profile = await prisma.teacherSchoolProfile.findUnique({
+      where: { ownerKey },
+    });
+    if (profile) {
+      return mapSchoolFromDb(profile);
+    }
+    throw error;
+  }
 }
 
 async function listTeacherMissionAssignmentsFromDatabase(
@@ -1017,46 +1032,75 @@ async function getWorkspaceFromDatabase(
     return getWorkspaceFromMemory(query);
   }
 
-  const [school, dbClasses, dbArchived] = await Promise.all([
+  const [school, dbClassrooms] = await Promise.all([
     ensureSchoolProfile(query.ownerKey),
     prisma.teacherClassroom.findMany({
-      where: { ownerKey: query.ownerKey, isArchived: false },
-      orderBy: [{ createdAt: "asc" }],
-    }),
-    prisma.teacherClassroom.findMany({
-      where: { ownerKey: query.ownerKey, isArchived: true },
-      orderBy: [{ updatedAt: "desc" }],
+      where: { ownerKey: query.ownerKey },
+      select: {
+        id: true,
+        name: true,
+        grade: true,
+        teacherName: true,
+        teacherPhone: true,
+        cardColor: true,
+        isArchived: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     }),
   ]);
+
+  const dbClasses = dbClassrooms.filter((classroom) => !classroom.isArchived);
+  const dbArchived = dbClassrooms.filter((classroom) => classroom.isArchived);
+  dbClasses.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  dbArchived.sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
 
   const classes = dbClasses.map(mapClassroomFromDb);
   const archivedClasses = dbArchived.map(mapClassroomFromDb);
   const activeClassId = normalizeClassId(classes, query.classId);
-
-  const dbLearners = activeClassId
-    ? await prisma.teacherLearner.findMany({
-        where: { classId: activeClassId },
-        orderBy: [{ createdAt: "asc" }],
-      })
-    : [];
-
-  const learners = dbLearners.map(mapLearnerFromDb);
-
   const sessionActivityId = normalizeSessionActivity(
     query.activityId,
     query.subjectId,
     query.strandId,
   );
 
-  const dbStatuses =
+  const [dbLearners, dbStatuses, assignments] = await Promise.all([
+    activeClassId
+      ? prisma.teacherLearner.findMany({
+          where: { classId: activeClassId },
+          select: {
+            id: true,
+            classId: true,
+            name: true,
+            avatarHue: true,
+            weeklyMinutes: true,
+            lastWeekMinutes: true,
+            createdAt: true,
+          },
+          orderBy: [{ createdAt: "asc" }],
+        })
+      : Promise.resolve([]),
     activeClassId && sessionActivityId
-      ? await prisma.teacherSessionStatus.findMany({
+      ? prisma.teacherSessionStatus.findMany({
           where: {
             classId: activeClassId,
             activityId: sessionActivityId,
           },
+          select: {
+            learnerId: true,
+            status: true,
+          },
         })
-      : [];
+      : Promise.resolve([]),
+    listTeacherMissionAssignmentsFromDatabase(query.ownerKey).catch((error) => {
+      if (shouldFallbackToMemory(error)) {
+        return getMemoryWorkspace(query.ownerKey).assignments;
+      }
+      throw error;
+    }),
+  ]);
+
+  const learners = dbLearners.map(mapLearnerFromDb);
 
   const rawStatuses: Record<string, LearnerProgressStatus> = {};
   dbStatuses.forEach((status) => {
@@ -1065,16 +1109,6 @@ async function getWorkspaceFromDatabase(
 
   const sessionStatuses = buildSessionStatusMap(learners, rawStatuses);
   const usage = computeUsage(learners);
-  let assignments: TeacherMissionAssignment[];
-  try {
-    assignments = await listTeacherMissionAssignmentsFromDatabase(query.ownerKey);
-  } catch (error) {
-    if (shouldFallbackToMemory(error)) {
-      assignments = getMemoryWorkspace(query.ownerKey).assignments;
-    } else {
-      throw error;
-    }
-  }
 
   return {
     isFallbackData: false,
