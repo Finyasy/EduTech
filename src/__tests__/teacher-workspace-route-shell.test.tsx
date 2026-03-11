@@ -77,10 +77,12 @@ const makeWorkspace = (
 describe("TeacherWorkspaceRouteShell", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.sessionStorage.clear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    window.sessionStorage.clear();
   });
 
   it("loads workspace and shows fallback badge when fallback data is returned", async () => {
@@ -214,5 +216,33 @@ describe("TeacherWorkspaceRouteShell", () => {
     expect(
       await screen.findByText("Unable to load teacher workspace."),
     ).toBeInTheDocument();
+  });
+
+  it("renders a cached workspace immediately while the live workspace refreshes", async () => {
+    window.sessionStorage.setItem(
+      "teacher-workspace-snapshot:/teach",
+      JSON.stringify(makeWorkspace()),
+    );
+
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/teach/course-catalog")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => makeCourseCatalog(),
+        });
+      }
+
+      return new Promise((_resolve) => {
+        // Keep the live workspace request pending so the test proves cached render.
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TeacherWorkspaceRouteShell basePath="/teach" />);
+
+    expect(await screen.findByTestId("teacher-workspace-client")).toBeInTheDocument();
+    expect(screen.getByTestId("school-name")).toHaveTextContent("Kwa Njenga");
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 });

@@ -6,6 +6,48 @@ import TeacherWorkspaceClient from "@/components/teacher/TeacherWorkspaceClient"
 import type { CourseOverview } from "@/lib/server/data";
 import type { TeacherWorkspaceSnapshot } from "@/lib/teacher/types";
 
+const WORKSPACE_SESSION_STORAGE_KEY_PREFIX = "teacher-workspace-snapshot";
+
+const getWorkspaceStorageKey = (basePath: "/teach" | "/admin/teach") =>
+  `${WORKSPACE_SESSION_STORAGE_KEY_PREFIX}:${basePath}`;
+
+const readCachedWorkspace = (
+  basePath: "/teach" | "/admin/teach",
+): TeacherWorkspaceSnapshot | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(getWorkspaceStorageKey(basePath));
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as TeacherWorkspaceSnapshot;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedWorkspace = (
+  basePath: "/teach" | "/admin/teach",
+  workspace: TeacherWorkspaceSnapshot,
+) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      getWorkspaceStorageKey(basePath),
+      JSON.stringify(workspace),
+    );
+  } catch {
+    // Ignore storage failures and keep runtime state only.
+  }
+};
+
 async function readWorkspaceError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({}));
   if (typeof payload?.error === "string" && payload.error.length > 0) {
@@ -27,10 +69,12 @@ export default function TeacherWorkspaceRouteShell({
   const initialQuery = useMemo(() => searchParams.toString(), [searchParams]);
   const initialQueryRef = useRef(initialQuery);
   const didBootstrapRef = useRef(false);
-  const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot | null>(null);
+  const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot | null>(() =>
+    readCachedWorkspace(basePath),
+  );
   const [resolvedCourseCatalog, setResolvedCourseCatalog] =
     useState<CourseOverview[]>(courseCatalog);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => readCachedWorkspace(basePath) === null);
   const [error, setError] = useState<string | null>(null);
 
   const loadWorkspace = useCallback(async () => {
@@ -57,6 +101,7 @@ export default function TeacherWorkspaceRouteShell({
       }
 
       const data = (await response.json()) as TeacherWorkspaceSnapshot;
+      writeCachedWorkspace(basePath, data);
       setWorkspace({
         ...data,
         assignments: Array.isArray(data.assignments) ? data.assignments : [],
@@ -80,7 +125,7 @@ export default function TeacherWorkspaceRouteShell({
       clearTimeout(timer);
       setIsLoading(false);
     }
-  }, []);
+  }, [basePath]);
 
   const loadCourseCatalog = useCallback(async () => {
     try {

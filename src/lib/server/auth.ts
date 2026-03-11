@@ -1,7 +1,18 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { unstable_cache } from "next/cache";
+import type { User } from "@prisma/client";
 import { isClerkPublishableKeyConfigured } from "@/lib/auth/post-auth-routing";
 import { getPrisma } from "@/lib/server/prisma";
+
+const USER_MEMORY_CACHE_TTL_MS = 5 * 60 * 1000;
+const USER_MEMORY_CACHE_STALE_TTL_MS =
+  process.env.NODE_ENV === "development"
+    ? 30 * 60 * 1000
+    : USER_MEMORY_CACHE_TTL_MS;
+const userMemoryCache = new Map<
+  string,
+  { expiresAt: number; staleAt: number; value: User }
+>();
 
 const parseEmailList = (rawList: string) =>
   rawList
@@ -25,6 +36,42 @@ const getRoleForEmail = (email: string) => {
     : teacherEmails.includes(normalizedEmail)
       ? "TEACHER"
       : "STUDENT";
+};
+
+const readUserMemoryCache = (
+  userId: string,
+  options?: { allowStale?: boolean },
+) => {
+  const cached = userMemoryCache.get(userId);
+  if (!cached) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  if (options?.allowStale && cached.staleAt > now) {
+    return cached.value;
+  }
+
+  userMemoryCache.delete(userId);
+  return null;
+};
+
+const writeUserMemoryCache = (user: User | null) => {
+  if (!user) {
+    return user;
+  }
+
+  const now = Date.now();
+  userMemoryCache.set(user.id, {
+    value: user,
+    expiresAt: now + USER_MEMORY_CACHE_TTL_MS,
+    staleAt: now + USER_MEMORY_CACHE_STALE_TTL_MS,
+  });
+  return user;
 };
 
 export type AuthState =
@@ -65,15 +112,20 @@ const ensureUserCached = (userId: string) =>
   )();
 
 export async function ensureUserByIdWithTimeout(userId: string, timeoutMs: number) {
+  const cached = readUserMemoryCache(userId);
+  if (cached) {
+    return cached;
+  }
+
   try {
     return await Promise.race([
       ensureUserCached(userId),
       new Promise<Awaited<ReturnType<typeof ensureUserCached>>>((resolve) =>
-        setTimeout(() => resolve(null), timeoutMs),
+        setTimeout(() => resolve(readUserMemoryCache(userId, { allowStale: true })), timeoutMs),
       ),
     ]);
   } catch {
-    return null;
+    return readUserMemoryCache(userId, { allowStale: true });
   }
 }
 
@@ -92,59 +144,76 @@ export async function ensureUserWithTimeout(timeoutMs: number) {
 }
 
 async function ensureUserById(userId: string) {
+  const cached = readUserMemoryCache(userId);
+  if (cached) {
+    return cached;
+  }
+
+  const staleUser = readUserMemoryCache(userId, { allowStale: true });
   const prisma = getPrisma();
   if (!prisma) {
     return null;
   }
 
-  const existingUser = await prisma.user.findUnique({
-    where: { id: userId },
-  });
+  try {
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
 
-  if (existingUser?.email) {
-    const role = getRoleForEmail(existingUser.email);
-    if (existingUser.role === role) {
-      return existingUser;
+    if (existingUser?.email) {
+      const role = getRoleForEmail(existingUser.email);
+      if (existingUser.role === role) {
+        return writeUserMemoryCache(existingUser);
+      }
+
+      return writeUserMemoryCache(
+        await prisma.user.update({
+          where: { id: userId },
+          data: { role },
+        }),
+      );
     }
 
-    return prisma.user.update({
-      where: { id: userId },
-      data: { role },
-    });
+    if (!process.env.CLERK_SECRET_KEY) {
+      return writeUserMemoryCache(existingUser);
+    }
+
+    const client = await clerkClient();
+    const clerkUser = await client.users.getUser(userId);
+    const primaryEmail = clerkUser?.emailAddresses?.[0]?.emailAddress;
+
+    if (!primaryEmail) {
+      return null;
+    }
+
+    const displayName =
+      [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
+      null;
+
+    const role = getRoleForEmail(primaryEmail);
+
+    return writeUserMemoryCache(
+      await prisma.user.upsert({
+        where: { id: userId },
+        update: {
+          email: primaryEmail,
+          name: displayName,
+          role,
+        },
+        create: {
+          id: userId,
+          email: primaryEmail,
+          name: displayName,
+          role,
+        },
+      }),
+    );
+  } catch (error) {
+    if (staleUser) {
+      return staleUser;
+    }
+    throw error;
   }
-
-  if (!process.env.CLERK_SECRET_KEY) {
-    return existingUser;
-  }
-
-  const client = await clerkClient();
-  const clerkUser = await client.users.getUser(userId);
-  const primaryEmail = clerkUser?.emailAddresses?.[0]?.emailAddress;
-
-  if (!primaryEmail) {
-    return null;
-  }
-
-  const displayName =
-    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
-    null;
-
-  const role = getRoleForEmail(primaryEmail);
-
-  return prisma.user.upsert({
-    where: { id: userId },
-    update: {
-      email: primaryEmail,
-      name: displayName,
-      role,
-    },
-    create: {
-      id: userId,
-      email: primaryEmail,
-      name: displayName,
-      role,
-    },
-  });
 }
 
 export async function ensureUser() {
@@ -152,6 +221,11 @@ export async function ensureUser() {
 
   if (!userId) {
     return null;
+  }
+
+  const cached = readUserMemoryCache(userId);
+  if (cached) {
+    return cached;
   }
 
   return ensureUserCached(userId);
