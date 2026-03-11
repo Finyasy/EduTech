@@ -81,6 +81,10 @@ export type TeacherAssignmentAnalyticsReport = {
 
 const TEACHER_WORKSPACE_QUERY_TIMEOUT_MS = 4_000;
 const TEACHER_WORKSPACE_CACHE_TTL_MS = 5_000;
+const TEACHER_WORKSPACE_CACHE_STALE_TTL_MS =
+  process.env.NODE_ENV === "development"
+    ? 30 * 60 * 1000
+    : 5 * 60 * 1000;
 const TEACHER_WORKSPACE_DEGRADED_SCOPE = "teacher-workspace";
 const ENABLE_WORKSPACE_CACHE = process.env.NODE_ENV !== "test";
 
@@ -291,7 +295,7 @@ type MemoryWorkspace = {
 const memoryStore = new Map<string, MemoryWorkspace>();
 const workspaceSnapshotCache = new Map<
   string,
-  { expiresAt: number; value: TeacherWorkspaceSnapshot }
+  { expiresAt: number; staleAt: number; value: TeacherWorkspaceSnapshot }
 >();
 
 const hasPersistentStore = () => Boolean(process.env.DATABASE_URL && getPrisma());
@@ -307,16 +311,25 @@ const workspaceSnapshotCacheKey = (query: WorkspaceQuery) =>
     query.activityId ?? "",
   ].join("::");
 
-const readWorkspaceSnapshotCache = (query: WorkspaceQuery) => {
+const readWorkspaceSnapshotCache = (
+  query: WorkspaceQuery,
+  options?: { allowStale?: boolean },
+) => {
   if (!ENABLE_WORKSPACE_CACHE) return null;
   const key = workspaceSnapshotCacheKey(query);
   const entry = workspaceSnapshotCache.get(key);
   if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    workspaceSnapshotCache.delete(key);
-    return null;
+  const now = Date.now();
+  if (entry.expiresAt > now) {
+    return entry.value;
   }
-  return entry.value;
+  if (options?.allowStale && entry.staleAt > now) {
+    return entry.value;
+  }
+  if (entry.staleAt <= now) {
+    workspaceSnapshotCache.delete(key);
+  }
+  return null;
 };
 
 const writeWorkspaceSnapshotCache = (
@@ -327,6 +340,7 @@ const writeWorkspaceSnapshotCache = (
   workspaceSnapshotCache.set(workspaceSnapshotCacheKey(query), {
     value,
     expiresAt: Date.now() + TEACHER_WORKSPACE_CACHE_TTL_MS,
+    staleAt: Date.now() + TEACHER_WORKSPACE_CACHE_STALE_TTL_MS,
   });
 };
 
@@ -1139,6 +1153,7 @@ export async function getTeacherWorkspaceSnapshot(
   if (cached) {
     return cached;
   }
+  const staleCached = readWorkspaceSnapshotCache(query, { allowStale: true });
 
   if (!hasPersistentStore()) {
     const snapshot = await getWorkspaceFromMemory(query);
@@ -1147,6 +1162,9 @@ export async function getTeacherWorkspaceSnapshot(
   }
 
   if (process.env.NODE_ENV !== "test" && isScopeDegraded(TEACHER_WORKSPACE_DEGRADED_SCOPE)) {
+    if (staleCached) {
+      return staleCached;
+    }
     const snapshot = await getWorkspaceFromMemory(query);
     writeWorkspaceSnapshotCache(query, snapshot);
     return snapshot;
@@ -1162,6 +1180,9 @@ export async function getTeacherWorkspaceSnapshot(
         TEACHER_WORKSPACE_DEGRADED_SCOPE,
         error instanceof Error ? error.message : "teacher-workspace-db-failure",
       );
+      if (staleCached) {
+        return staleCached;
+      }
       const snapshot = await getWorkspaceFromMemory(query);
       writeWorkspaceSnapshotCache(query, snapshot);
       return snapshot;

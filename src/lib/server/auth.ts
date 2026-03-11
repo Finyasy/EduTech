@@ -9,9 +9,15 @@ const USER_MEMORY_CACHE_STALE_TTL_MS =
   process.env.NODE_ENV === "development"
     ? 30 * 60 * 1000
     : USER_MEMORY_CACHE_TTL_MS;
+const ACCESS_LOOKUP_TIMEOUT_MS = 1_200;
 const userMemoryCache = new Map<
   string,
   { expiresAt: number; staleAt: number; value: User }
+>();
+type AccessUser = Pick<User, "id" | "email" | "name" | "role">;
+const accessUserMemoryCache = new Map<
+  string,
+  { expiresAt: number; staleAt: number; value: AccessUser }
 >();
 
 const parseEmailList = (rawList: string) =>
@@ -72,6 +78,57 @@ const writeUserMemoryCache = (user: User | null) => {
     staleAt: now + USER_MEMORY_CACHE_STALE_TTL_MS,
   });
   return user;
+};
+
+const readAccessUserMemoryCache = (
+  userId: string,
+  options?: { allowStale?: boolean },
+) => {
+  const cached = accessUserMemoryCache.get(userId);
+  if (!cached) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  if (options?.allowStale && cached.staleAt > now) {
+    return cached.value;
+  }
+
+  accessUserMemoryCache.delete(userId);
+  return null;
+};
+
+const writeAccessUserMemoryCache = (user: AccessUser | null) => {
+  if (!user) {
+    return user;
+  }
+
+  const now = Date.now();
+  accessUserMemoryCache.set(user.id, {
+    value: user,
+    expiresAt: now + USER_MEMORY_CACHE_TTL_MS,
+    staleAt: now + USER_MEMORY_CACHE_STALE_TTL_MS,
+  });
+  return user;
+};
+
+const toAccessUser = (
+  user: Pick<User, "id" | "email" | "name" | "role"> | null,
+): AccessUser | null => {
+  if (!user?.email) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  };
 };
 
 export type AuthState =
@@ -140,6 +197,65 @@ export async function ensureUserWithTimeout(timeoutMs: number) {
     return await ensureUserByIdWithTimeout(userId, timeoutMs);
   } catch {
     return null;
+  }
+}
+
+async function getAccessUserFromClerk(userId: string): Promise<AccessUser | null> {
+  const staleUser = readAccessUserMemoryCache(userId, { allowStale: true });
+  if (!process.env.CLERK_SECRET_KEY) {
+    return staleUser;
+  }
+
+  try {
+    const client = await clerkClient();
+    const clerkUser = await client.users.getUser(userId);
+    const primaryEmail = clerkUser?.emailAddresses?.[0]?.emailAddress;
+
+    if (!primaryEmail) {
+      return staleUser;
+    }
+
+    const displayName =
+      [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
+      null;
+
+    return writeAccessUserMemoryCache({
+      id: userId,
+      email: primaryEmail,
+      name: displayName,
+      role: getRoleForEmail(primaryEmail),
+    });
+  } catch {
+    return staleUser;
+  }
+}
+
+async function getAccessUserWithTimeout(
+  userId: string,
+  timeoutMs: number,
+): Promise<AccessUser | null> {
+  const cached = readAccessUserMemoryCache(userId);
+  if (cached) {
+    return cached;
+  }
+
+  const staleUser = readAccessUserMemoryCache(userId, { allowStale: true });
+  try {
+    return await Promise.race([
+      (async () => {
+        const dbUser = await ensureUserByIdWithTimeout(userId, timeoutMs);
+        const accessUser = toAccessUser(dbUser);
+        if (accessUser) {
+          return writeAccessUserMemoryCache(accessUser);
+        }
+        return getAccessUserFromClerk(userId);
+      })(),
+      new Promise<AccessUser | null>((resolve) =>
+        setTimeout(() => resolve(staleUser), timeoutMs),
+      ),
+    ]);
+  } catch {
+    return staleUser;
   }
 }
 
@@ -236,7 +352,15 @@ export async function requireAdmin() {
     return { ok: false, status: 501 };
   }
 
-  const user = await ensureUser();
+  const authState = await getAuthStateWithTimeout(ACCESS_LOOKUP_TIMEOUT_MS);
+  if (authState.status !== "authenticated") {
+    return { ok: false, status: 401 };
+  }
+
+  const user = await getAccessUserWithTimeout(
+    authState.userId,
+    ACCESS_LOOKUP_TIMEOUT_MS,
+  );
 
   if (!user) {
     return { ok: false, status: 401 };
@@ -254,7 +378,15 @@ export async function requireStaff() {
     return { ok: false, status: 501 };
   }
 
-  const user = await ensureUser();
+  const authState = await getAuthStateWithTimeout(ACCESS_LOOKUP_TIMEOUT_MS);
+  if (authState.status !== "authenticated") {
+    return { ok: false, status: 401 };
+  }
+
+  const user = await getAccessUserWithTimeout(
+    authState.userId,
+    ACCESS_LOOKUP_TIMEOUT_MS,
+  );
 
   if (!user) {
     return { ok: false, status: 401 };
