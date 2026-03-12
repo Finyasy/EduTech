@@ -118,7 +118,7 @@ describe("teacher workspace snapshot cache", () => {
     expect(staleSnapshot.classes[0]?.id).toBe("class-live");
   });
 
-  it("returns a partial workspace snapshot without waiting for secondary detail queries", async () => {
+  it("returns a partial workspace snapshot without waiting for secondary detail queries to finish", async () => {
     const createdAt = new Date("2026-03-11T00:00:00.000Z");
     const teacherSessionStatusFindMany = vi.fn().mockReturnValue(new Promise(() => {}));
     const assignmentQuery = vi.fn().mockReturnValue(new Promise(() => {}));
@@ -181,8 +181,179 @@ describe("teacher workspace snapshot cache", () => {
     expect(snapshot.learners[0]?.id).toBe("learner-live");
     expect(snapshot.assignments).toEqual([]);
     expect(snapshot.assignmentAnalytics.totalAssignments).toBe(0);
-    expect(teacherSessionStatusFindMany).not.toHaveBeenCalled();
-    expect(assignmentQuery).not.toHaveBeenCalled();
+    expect(teacherSessionStatusFindMany).toHaveBeenCalledTimes(1);
+    expect(assignmentQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses the cached core workspace context when hydrating session statuses", async () => {
+    const createdAt = new Date("2026-03-11T00:00:00.000Z");
+    const teacherClassroomFindMany = vi.fn().mockResolvedValue([
+      {
+        id: "class-live",
+        name: "Live Class",
+        grade: "PP1",
+        teacherName: "Mary",
+        teacherPhone: "+254700000001",
+        cardColor: "bg-sky-100",
+        isArchived: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ]);
+    const teacherLearnerFindMany = vi.fn().mockResolvedValue([
+      {
+        id: "learner-live",
+        classId: "class-live",
+        name: "Asha",
+        avatarHue: 120,
+        weeklyMinutes: 15,
+        lastWeekMinutes: 12,
+        createdAt,
+      },
+    ]);
+    const teacherSessionStatusFindMany = vi.fn().mockResolvedValue([
+      {
+        learnerId: "learner-live",
+        status: "PRACTICED_ENOUGH" as const,
+      },
+    ]);
+    const assignmentQuery = vi.fn().mockResolvedValue([]);
+
+    getPrismaMock.mockReturnValue({
+      teacherSchoolProfile: {
+        findUnique: vi.fn().mockResolvedValue({
+          schoolName: "Live School",
+          country: "Kenya",
+          appVersion: "4.1.0",
+          deviceId: "lb-live",
+          connectivityStatus: "OKAY",
+          contentStatus: "UP_TO_DATE",
+          supportEmail: "support@example.com",
+          schoolQrCode: "LIVE-QR",
+        }),
+      },
+      teacherClassroom: {
+        findMany: teacherClassroomFindMany,
+      },
+      teacherLearner: {
+        findMany: teacherLearnerFindMany,
+      },
+      teacherSessionStatus: {
+        findMany: teacherSessionStatusFindMany,
+      },
+      $queryRaw: assignmentQuery,
+    });
+
+    const {
+      getTeacherWorkspaceSnapshot,
+      getTeacherWorkspaceSessionStatuses,
+    } = await import("@/lib/server/teacher-store");
+
+    const snapshot = await getTeacherWorkspaceSnapshot(
+      { ownerKey: "teacher_1" },
+      { detailLevel: "core" },
+    );
+    const statuses = await getTeacherWorkspaceSessionStatuses({
+      ownerKey: "teacher_1",
+    });
+
+    expect(snapshot.isPartialData).toBe(true);
+    expect(statuses.sessionStatuses).toEqual({
+      "learner-live": "PRACTICED_ENOUGH",
+    });
+    expect(teacherClassroomFindMany).toHaveBeenCalledTimes(1);
+    expect(teacherLearnerFindMany).toHaveBeenCalledTimes(1);
+    expect(teacherSessionStatusFindMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("dedupes assignment hydration against the core snapshot warmup", async () => {
+    const createdAt = new Date("2026-03-11T00:00:00.000Z");
+    let resolveAssignments!: (value: unknown[]) => void;
+    const assignmentQuery = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAssignments = resolve;
+        }),
+    );
+
+    getPrismaMock.mockReturnValue({
+      teacherSchoolProfile: {
+        findUnique: vi.fn().mockResolvedValue({
+          schoolName: "Live School",
+          country: "Kenya",
+          appVersion: "4.1.0",
+          deviceId: "lb-live",
+          connectivityStatus: "OKAY",
+          contentStatus: "UP_TO_DATE",
+          supportEmail: "support@example.com",
+          schoolQrCode: "LIVE-QR",
+        }),
+      },
+      teacherClassroom: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "class-live",
+            name: "Live Class",
+            grade: "PP1",
+            teacherName: "Mary",
+            teacherPhone: "+254700000001",
+            cardColor: "bg-sky-100",
+            isArchived: false,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        ]),
+      },
+      teacherLearner: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      teacherSessionStatus: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      $queryRaw: assignmentQuery,
+    });
+
+    const {
+      getTeacherWorkspaceSnapshot,
+      getTeacherWorkspaceAssignments,
+    } = await import("@/lib/server/teacher-store");
+
+    await getTeacherWorkspaceSnapshot(
+      { ownerKey: "teacher_1" },
+      { detailLevel: "core" },
+    );
+
+    const assignmentsPromise = getTeacherWorkspaceAssignments({
+      ownerKey: "teacher_1",
+    });
+
+    expect(assignmentQuery).toHaveBeenCalledTimes(1);
+
+    resolveAssignments([
+      {
+        id: "assignment-1",
+        ownerKey: "teacher_1",
+        classId: "class-live",
+        courseId: "course-logic",
+        courseTitle: "AI Pattern Detectives",
+        target: "CLASS",
+        subjectId: "subject-math",
+        strandId: "strand-pre-number",
+        activityId: "activity-sorting-grouping",
+        learnerIds: [],
+        note: null,
+        status: "ASSIGNED",
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ]);
+
+    const result = await assignmentsPromise;
+
+    expect(result.assignments).toHaveLength(1);
+    expect(result.assignments[0]?.id).toBe("assignment-1");
+    expect(result.assignmentAnalytics.totalAssignments).toBe(1);
+    expect(assignmentQuery).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to memory quickly when learner creation stalls in Prisma", async () => {
