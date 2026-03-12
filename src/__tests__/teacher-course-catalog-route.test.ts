@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getTeacherOwnerKeyMock = vi.fn();
 const listCoursesForTeacherWorkspaceMock = vi.fn();
+const getFallbackCourseOverviewsMock = vi.fn();
 
 vi.mock("@/lib/server/teach-access", () => ({
   getTeacherOwnerKey: () => getTeacherOwnerKeyMock(),
@@ -10,6 +11,7 @@ vi.mock("@/lib/server/teach-access", () => ({
 
 vi.mock("@/lib/server/data", () => ({
   listCoursesForTeacherWorkspace: () => listCoursesForTeacherWorkspaceMock(),
+  getFallbackCourseOverviews: () => getFallbackCourseOverviewsMock(),
 }));
 
 describe("GET /api/teach/course-catalog", () => {
@@ -17,14 +19,29 @@ describe("GET /api/teach/course-catalog", () => {
     vi.clearAllMocks();
     vi.resetModules();
     vi.useFakeTimers();
+    delete (globalThis as { __teacherCourseCatalogState?: unknown })
+      .__teacherCourseCatalogState;
     getTeacherOwnerKeyMock.mockResolvedValue("teacher_1");
+    getFallbackCourseOverviewsMock.mockReturnValue([
+      {
+        id: "course-fallback",
+        title: "Fallback course",
+        description: "Fallback",
+        gradeLevel: "PP1",
+        lessonCount: 1,
+        firstLessonId: "lesson-fallback",
+        isFallbackData: true,
+      },
+    ]);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    delete (globalThis as { __teacherCourseCatalogState?: unknown })
+      .__teacherCourseCatalogState;
   });
 
-  it("returns stale live courses when a refresh stalls past the timeout", async () => {
+  it("returns stale live courses immediately while a background refresh runs", async () => {
     const liveCourses = [
       {
         id: "course-live",
@@ -35,21 +52,14 @@ describe("GET /api/teach/course-catalog", () => {
         firstLessonId: "lesson-live",
       },
     ];
-    const fallbackCourses = [
-      {
-        id: "course-fallback",
-        title: "Fallback course",
-        description: "Fallback",
-        gradeLevel: "PP1",
-        lessonCount: 1,
-        firstLessonId: "lesson-fallback",
-        isFallbackData: true,
-      },
-    ];
-
     listCoursesForTeacherWorkspaceMock
       .mockResolvedValueOnce(liveCourses)
-      .mockResolvedValueOnce(fallbackCourses);
+      .mockImplementationOnce(
+        () =>
+          new Promise(() => {
+            // Keep the refresh pending so the route must serve stale data immediately.
+          }),
+      );
 
     const { GET } = await import("@/app/api/teach/course-catalog/route");
 
@@ -67,23 +77,22 @@ describe("GET /api/teach/course-catalog", () => {
     expect(secondResponse.headers.get("x-teach-course-catalog-source")).toBe(
       "stale-live",
     );
+    expect(listCoursesForTeacherWorkspaceMock).toHaveBeenCalledTimes(2);
   });
 
-  it("returns fallback data when no live cache exists and the refresh times out", async () => {
-    listCoursesForTeacherWorkspaceMock.mockResolvedValueOnce([
-      {
-        id: "course-fallback",
-        title: "Fallback course",
-        description: "Fallback",
-        gradeLevel: "PP1",
-        lessonCount: 1,
-        firstLessonId: "lesson-fallback",
-        isFallbackData: true,
-      },
-    ]);
+  it("returns fallback data when no live cache exists and the refresh exceeds the route timeout", async () => {
+    listCoursesForTeacherWorkspaceMock.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // Keep the refresh pending so the route uses its faster timeout fallback.
+        }),
+    );
 
     const { GET } = await import("@/app/api/teach/course-catalog/route");
-    const response = await GET();
+    const responsePromise = GET();
+
+    await vi.advanceTimersByTimeAsync(451);
+    const response = await responsePromise;
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual([
@@ -97,6 +106,38 @@ describe("GET /api/teach/course-catalog", () => {
         isFallbackData: true,
       },
     ]);
-    expect(response.headers.get("x-teach-course-catalog-source")).toBe("fallback");
+    expect(response.headers.get("x-teach-course-catalog-source")).toBe(
+      "timeout-fallback",
+    );
+  });
+
+  it("dedupes repeated cold refreshes behind one in-flight request", async () => {
+    listCoursesForTeacherWorkspaceMock.mockImplementation(
+      () =>
+        new Promise(() => {
+          // Hold the refresh open so both requests share the same promise.
+        }),
+    );
+
+    const { GET } = await import("@/app/api/teach/course-catalog/route");
+    const firstResponsePromise = GET();
+    const secondResponsePromise = GET();
+
+    await vi.advanceTimersByTimeAsync(451);
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      firstResponsePromise,
+      secondResponsePromise,
+    ]);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+    expect(listCoursesForTeacherWorkspaceMock).toHaveBeenCalledTimes(1);
+    expect(firstResponse.headers.get("x-teach-course-catalog-source")).toBe(
+      "timeout-fallback",
+    );
+    expect(secondResponse.headers.get("x-teach-course-catalog-source")).toBe(
+      "timeout-fallback",
+    );
   });
 });
