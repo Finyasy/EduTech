@@ -29,8 +29,30 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
   ]);
 }
 
+function resolveAppUrl() {
+  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const vercelProductionUrl =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ?? "";
+  if (vercelProductionUrl) {
+    return vercelProductionUrl.startsWith("http")
+      ? vercelProductionUrl
+      : `https://${vercelProductionUrl}`;
+  }
+
+  const vercelUrl = process.env.VERCEL_URL?.trim() ?? "";
+  if (vercelUrl) {
+    return vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`;
+  }
+
+  return "";
+}
+
 function getConfigChecks(isProduction: boolean) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "";
+  const appUrl = resolveAppUrl();
   const clerkPk = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? "";
   const clerkSk = process.env.CLERK_SECRET_KEY?.trim() ?? "";
   const dbUrl = process.env.DATABASE_URL?.trim() ?? "";
@@ -43,15 +65,15 @@ function getConfigChecks(isProduction: boolean) {
     if (isProduction) {
       config.ok = false;
       config.status = "fail";
-      config.message = "NEXT_PUBLIC_APP_URL is missing or invalid.";
+      config.message = "Production app URL is missing or invalid.";
     } else {
       config.status = "warn";
-      config.message = "NEXT_PUBLIC_APP_URL is missing or invalid.";
+      config.message = "Production app URL is missing or invalid.";
     }
   } else if (isProduction && parsedAppUrl.protocol !== "https:") {
     config.ok = false;
     config.status = "fail";
-    config.message = "NEXT_PUBLIC_APP_URL must use https:// in production.";
+    config.message = "Production app URL must use https:// in production.";
   }
 
   if (!dbUrl) {

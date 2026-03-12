@@ -9,6 +9,19 @@ function getEnv(name) {
   return (process.env[name] ?? "").trim();
 }
 
+function toHttpsUrl(value) {
+  if (!value) return "";
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+function resolveAppUrl() {
+  return (
+    getEnv("NEXT_PUBLIC_APP_URL") ||
+    toHttpsUrl(getEnv("VERCEL_PROJECT_PRODUCTION_URL")) ||
+    toHttpsUrl(getEnv("VERCEL_URL"))
+  );
+}
+
 function addIssue(target, message) {
   target.push(message);
 }
@@ -95,7 +108,7 @@ function validateRoleEmails(name, value) {
   }
 }
 
-const appUrl = getEnv("NEXT_PUBLIC_APP_URL");
+const appUrl = resolveAppUrl();
 const dbUrl = getEnv("DATABASE_URL");
 const directUrl = getEnv("DIRECT_URL");
 const migrateDbUrl = getEnv("MIGRATE_DATABASE_URL");

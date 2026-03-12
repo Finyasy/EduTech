@@ -4,13 +4,14 @@
 - Import the GitHub repo into Vercel with the `Next.js` framework preset.
 - The repo-level Vercel build command is pinned in `vercel.json`:
   - `pnpm vercel-build`
-- `pnpm vercel-build` runs `pnpm prisma:generate` before `pnpm build` so Prisma client generation stays explicit in Vercel builds.
+- `pnpm vercel-build` runs `pnpm prisma:generate`, then production readiness checks, then `pnpm build`.
+- On Vercel production deployments, the readiness check runs in strict mode.
 
 ## 1. Environment and Secrets
 - Configure these Vercel Production env vars:
   - `DATABASE_URL` (pooled runtime URL)
   - `DIRECT_URL` (direct DB URL) or `MIGRATE_DATABASE_URL`
-  - `NEXT_PUBLIC_APP_URL` (https production URL)
+  - `NEXT_PUBLIC_APP_URL` (https production URL, optional if `VERCEL_PROJECT_PRODUCTION_URL` is available)
   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_live_*`)
   - `CLERK_SECRET_KEY` (`sk_live_*`)
   - `ADMIN_EMAILS`, `TEACHER_EMAILS`

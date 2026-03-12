@@ -87,7 +87,7 @@ Open `http://localhost:3000`.
 
 - `pnpm dev` — start the dev server
 - `pnpm build` — production build
-- `pnpm vercel-build` — generate Prisma client, then run the Vercel production build
+- `pnpm vercel-build` — Prisma generate, readiness gate, then Vercel-equivalent production build
 - `pnpm start` — start production server
 - `pnpm lint` — run ESLint
 - `pnpm prisma` — Prisma CLI
@@ -113,11 +113,12 @@ Open `http://localhost:3000`.
 2. Keep the framework preset as `Next.js`.
 3. The repo now pins the Vercel build command in `vercel.json`:
    - `pnpm vercel-build`
-   - This runs `pnpm prisma:generate` before `pnpm build`, which keeps Prisma client generation explicit on Vercel installs and builds.
+   - This runs `pnpm prisma:generate`, then production readiness checks, then `pnpm build`.
+   - Production Vercel deploys run readiness in strict mode.
 4. Configure environment variables in Vercel for both `Production` and `Preview` as needed:
    - `DATABASE_URL` (pooled runtime URL)
    - `DIRECT_URL` (direct DB URL) or `MIGRATE_DATABASE_URL`
-   - `NEXT_PUBLIC_APP_URL` (your production URL)
+   - `NEXT_PUBLIC_APP_URL` (your production URL, optional if you rely on `VERCEL_PROJECT_PRODUCTION_URL`)
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_live_*` in production)
    - `CLERK_SECRET_KEY` (`sk_live_*` in production)
    - `ADMIN_EMAILS`, `TEACHER_EMAILS`

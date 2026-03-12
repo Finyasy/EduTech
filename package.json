@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
-    "vercel-build": "pnpm prisma:generate && pnpm build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "postinstall": "pnpm prisma:generate",
     "start": "next start",
     "lint": "eslint",

@@ -87,4 +87,20 @@ describe("GET /api/health/ready", () => {
     expect(json.checks.database.status).toBe("fail");
     expect(String(json.checks.database.message)).toContain("timeout");
   });
+
+  it("accepts Vercel production URL fallback when NEXT_PUBLIC_APP_URL is unset", async () => {
+    setProductionEnv();
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "edutech.vercel.app";
+    const queryRawMock = vi.fn().mockResolvedValue([{ ok: 1 }]);
+    getPrismaMock.mockReturnValue({ $queryRawUnsafe: queryRawMock });
+
+    const { GET } = await import("@/app/api/health/ready/route");
+    const response = await GET();
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.checks.config.status).toBe("ok");
+  });
 });

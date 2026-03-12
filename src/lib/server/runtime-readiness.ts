@@ -2,6 +2,27 @@ const globalRuntimeState = globalThis as typeof globalThis & {
   __edutechRuntimeWarningsLogged?: boolean;
 };
 
+function resolveAppUrl() {
+  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (vercelProductionUrl) {
+    return vercelProductionUrl.startsWith("http")
+      ? vercelProductionUrl
+      : `https://${vercelProductionUrl}`;
+  }
+
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) {
+    return vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`;
+  }
+
+  return "";
+}
+
 export function getRuntimeReadinessWarnings() {
   const warnings: string[] = [];
   const isProduction = process.env.NODE_ENV === "production";
@@ -15,8 +36,8 @@ export function getRuntimeReadinessWarnings() {
     if (clerkSk.startsWith("sk_test_")) {
       warnings.push("CLERK_SECRET_KEY uses a Clerk development key in production.");
     }
-    if (!process.env.NEXT_PUBLIC_APP_URL) {
-      warnings.push("NEXT_PUBLIC_APP_URL is not set. Redirects and absolute links may be inconsistent.");
+    if (!resolveAppUrl()) {
+      warnings.push("No production app URL is set. Redirects and absolute links may be inconsistent.");
     }
     if (!process.env.DATABASE_URL) {
       warnings.push("DATABASE_URL is not set. Production will run on fallback/mock data only.");
