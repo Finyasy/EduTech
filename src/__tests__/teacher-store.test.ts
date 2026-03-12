@@ -266,6 +266,88 @@ describe("teacher workspace snapshot cache", () => {
     expect(teacherSessionStatusFindMany).toHaveBeenCalledTimes(1);
   });
 
+  it("reuses cached base data across core workspace query changes for the same class", async () => {
+    const createdAt = new Date("2026-03-11T00:00:00.000Z");
+    const teacherSchoolProfileFindUnique = vi.fn().mockResolvedValue({
+      schoolName: "Live School",
+      country: "Kenya",
+      appVersion: "4.1.0",
+      deviceId: "lb-live",
+      connectivityStatus: "OKAY",
+      contentStatus: "UP_TO_DATE",
+      supportEmail: "support@example.com",
+      schoolQrCode: "LIVE-QR",
+    });
+    const teacherClassroomFindMany = vi.fn().mockResolvedValue([
+      {
+        id: "class-live",
+        name: "Live Class",
+        grade: "PP1",
+        teacherName: "Mary",
+        teacherPhone: "+254700000001",
+        cardColor: "bg-sky-100",
+        isArchived: false,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ]);
+    const teacherLearnerFindMany = vi.fn().mockResolvedValue([
+      {
+        id: "learner-live",
+        classId: "class-live",
+        name: "Asha",
+        avatarHue: 120,
+        weeklyMinutes: 15,
+        lastWeekMinutes: 12,
+        createdAt,
+      },
+    ]);
+
+    getPrismaMock.mockReturnValue({
+      teacherSchoolProfile: {
+        findUnique: teacherSchoolProfileFindUnique,
+      },
+      teacherClassroom: {
+        findMany: teacherClassroomFindMany,
+      },
+      teacherLearner: {
+        findMany: teacherLearnerFindMany,
+      },
+      teacherSessionStatus: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+    });
+
+    const { getTeacherWorkspaceSnapshot } = await import("@/lib/server/teacher-store");
+
+    await getTeacherWorkspaceSnapshot(
+      {
+        ownerKey: "teacher_1",
+        classId: "class-live",
+        subjectId: "subject-math",
+        strandId: "strand-pre-number",
+        activityId: "activity-sorting-grouping",
+      },
+      { detailLevel: "core" },
+    );
+
+    await getTeacherWorkspaceSnapshot(
+      {
+        ownerKey: "teacher_1",
+        classId: "class-live",
+        subjectId: "subject-language",
+        strandId: "strand-reading",
+        activityId: "activity-print-awareness",
+      },
+      { detailLevel: "core" },
+    );
+
+    expect(teacherSchoolProfileFindUnique).toHaveBeenCalledTimes(1);
+    expect(teacherClassroomFindMany).toHaveBeenCalledTimes(1);
+    expect(teacherLearnerFindMany).toHaveBeenCalledTimes(1);
+  });
+
   it("dedupes assignment hydration against the core snapshot warmup", async () => {
     const createdAt = new Date("2026-03-11T00:00:00.000Z");
     let resolveAssignments!: (value: unknown[]) => void;

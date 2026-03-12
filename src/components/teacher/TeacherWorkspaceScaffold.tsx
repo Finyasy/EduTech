@@ -9,6 +9,7 @@ import {
 } from "@/lib/curriculum/learning-path";
 import { requireStaff } from "@/lib/server/auth";
 import { getFallbackCourseOverviews } from "@/lib/server/data";
+import { prewarmTeacherWorkspaceBase } from "@/lib/server/teacher-store";
 import TeacherWorkspaceRouteShell from "./TeacherWorkspaceRouteShell";
 
 type TeacherWorkspaceScaffoldProps = {
@@ -48,6 +49,8 @@ export default async function TeacherWorkspaceScaffold({
   if (!staffUser) {
     redirect(`/sign-in?redirect_url=${encodeURIComponent(basePath)}`);
   }
+
+  prewarmTeacherWorkspaceBase({ ownerKey: staffUser.id });
 
   const isAdmin = staffUser.role === "ADMIN";
   const courses = getFallbackCourseOverviews();
