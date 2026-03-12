@@ -5,6 +5,8 @@ import ClerkAuthCard from "@/components/auth/ClerkAuthCard";
 import AuthExperienceShell from "@/components/auth/AuthExperienceShell";
 import { normalizeAppRedirectPath } from "@/lib/auth/post-auth-routing";
 
+export const dynamic = "force-dynamic";
+
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 const isClerkConfigured =
   clerkPublishableKey &&
