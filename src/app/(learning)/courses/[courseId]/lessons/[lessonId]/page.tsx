@@ -1,7 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
 import SiteHeader from "@/components/shared/SiteHeader";
+import MissionArtwork from "@/components/shared/MissionArtwork";
+import LessonArtifactPanel from "@/components/learning/LessonArtifactPanel";
 import LessonProgressPanel from "@/components/learning/LessonProgressPanel";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
+import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import { getCourse, getLesson, listLessons } from "@/lib/server/data";
 import type { LessonDetail } from "@/lib/server/data";
 import {
@@ -11,6 +16,7 @@ import {
 } from "@/lib/youtube";
 
 export const revalidate = 120;
+const lessonAuthTimeoutMs = 900;
 
 type LessonPageProps = {
   params: Promise<{ courseId: string; lessonId: string }>;
@@ -25,6 +31,12 @@ const isClerkConfigured = Boolean(
 
 export default async function LessonPage({ params }: LessonPageProps) {
   const { courseId, lessonId } = await params;
+  const authState = await getAuthStateWithTimeout(lessonAuthTimeoutMs);
+
+  if (authState.status === "unauthenticated") {
+    redirect(buildSignInRedirectUrl(`/courses/${courseId}/lessons/${lessonId}`));
+  }
+
   const [course, lesson, lessons] = (await Promise.all([
     getCourse(courseId),
     getLesson(lessonId),
@@ -68,6 +80,17 @@ export default async function LessonPage({ params }: LessonPageProps) {
       <SiteHeader withAuth={false} />
 
       <main className="mx-auto w-full max-w-7xl px-6 pb-20 pt-8 md:px-8">
+        {authState.status === "timed_out" && (
+          <div className="mb-6">
+            <LearnerRouteAuthBridge
+              redirectUrl={`/courses/${courseId}/lessons/${lessonId}`}
+              eyebrow="Learner session"
+              title="Checking your lesson access."
+              description="The lesson shell is ready. If your session expired, we will move you to sign-in before opening the private lesson flow."
+            />
+          </div>
+        )}
+
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <Link
             href="/courses"
@@ -204,7 +227,14 @@ export default async function LessonPage({ params }: LessonPageProps) {
           </div>
 
           <aside className="space-y-6">
+            <MissionArtwork
+              className="h-56"
+              imageClassName="object-[center_42%]"
+              label={`${lesson.title} learning studio`}
+              priority
+            />
             <LessonProgressPanel lessonId={lesson.id} clerkEnabled={isClerkConfigured} />
+            <LessonArtifactPanel lessonId={lesson.id} clerkEnabled={isClerkConfigured} />
 
             <div className="glass-shell rounded-[2.1rem] border border-white/70 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">

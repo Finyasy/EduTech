@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
+import MissionArtwork from "@/components/shared/MissionArtwork";
 import SiteHeader from "@/components/shared/SiteHeader";
 import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
 import { getAuthStateWithTimeout } from "@/lib/server/auth";
@@ -27,26 +28,36 @@ export default async function GamesPage() {
 
       <main className="mx-auto w-full max-w-7xl px-6 pb-20 pt-8 md:px-8">
         <header className="mb-8 rounded-[2.6rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] px-6 py-8 text-white shadow-skyline md:px-10 md:py-10">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/62">
-              Learner games
-            </p>
-            {showDelayedDataBadge && (
-              <span className="rounded-full border border-amber-200/25 bg-amber-300/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-100">
-                Data may be delayed
-              </span>
-            )}
+          <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-start">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/62">
+                  Learner games
+                </p>
+                {showDelayedDataBadge && (
+                  <span className="rounded-full border border-amber-200/25 bg-amber-300/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-100">
+                    Data may be delayed
+                  </span>
+                )}
+              </div>
+              <h1
+                className="mt-4 text-4xl font-semibold leading-tight md:text-6xl"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Play to practice without leaving the learning flow.
+              </h1>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-white/72 md:text-base">
+                Each mini-game is a fast repetition loop for AI, coding, and maths ideas. Open one,
+                answer quickly, and keep your learning momentum high.
+              </p>
+            </div>
+            <MissionArtwork
+              className="h-60 border-white/15"
+              imageClassName="object-[center_42%]"
+              label="Learner games practice studio"
+              priority
+            />
           </div>
-          <h1
-            className="mt-4 text-4xl font-semibold leading-tight md:text-6xl"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Play to practice without leaving the learning flow.
-          </h1>
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-white/72 md:text-base">
-            Each mini-game is a fast repetition loop for AI, coding, and maths ideas. Open one,
-            answer quickly, and keep your learning momentum high.
-          </p>
         </header>
 
         {authState.status === "timed_out" && (

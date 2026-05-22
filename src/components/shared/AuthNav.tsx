@@ -21,7 +21,7 @@ export default function AuthNav({ isStaff, isAdmin }: AuthNavProps) {
   const disableSocial = process.env.NEXT_PUBLIC_CLERK_DISABLE_SOCIAL === "1";
   if (!publishableKey) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
         <Link
           href="/sign-in"
           className="inline-flex min-h-11 items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
@@ -30,7 +30,7 @@ export default function AuthNav({ isStaff, isAdmin }: AuthNavProps) {
         </Link>
         <Link
           href="/sign-up"
-          className="inline-flex min-h-11 items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+          className="hidden min-h-11 items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 sm:inline-flex"
         >
           Sign up
         </Link>
@@ -39,9 +39,9 @@ export default function AuthNav({ isStaff, isAdmin }: AuthNavProps) {
   }
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex min-w-0 items-center gap-1 sm:gap-4">
       <SignedOut>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {disableSocial ? (
             <>
               <Link
@@ -52,7 +52,7 @@ export default function AuthNav({ isStaff, isAdmin }: AuthNavProps) {
               </Link>
               <Link
                 href="/sign-up"
-                className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                className="hidden min-h-11 items-center justify-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 sm:inline-flex"
               >
                 Sign up
               </Link>
@@ -78,7 +78,7 @@ export default function AuthNav({ isStaff, isAdmin }: AuthNavProps) {
               >
                 <button
                   type="button"
-                  className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                  className="hidden min-h-11 items-center justify-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 sm:inline-flex"
                 >
                   Sign up
                 </button>

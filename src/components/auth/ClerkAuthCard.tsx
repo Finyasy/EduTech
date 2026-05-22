@@ -75,7 +75,12 @@ const clerkAppearance = {
     formFieldAction: "font-semibold text-sky-700 hover:text-sky-800",
     footer: "border-t border-slate-200/80 pt-5",
     footerActionText: "text-sm text-slate-600",
-    footerActionLink: "font-semibold text-orange-700 hover:text-orange-800",
+    footerActionLink: "font-semibold text-orange-800 hover:text-orange-900",
+    footerPages: "text-sm text-slate-600",
+    footerPagesLink: "font-semibold text-orange-800 hover:text-orange-900",
+    developmentMode:
+      "rounded-full bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-900",
+    developmentModeText: "font-semibold text-orange-900",
     identityPreviewText: "text-sm text-slate-700",
     identityPreviewEditButton:
       "font-semibold text-sky-700 hover:text-sky-800",

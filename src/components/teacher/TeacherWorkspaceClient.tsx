@@ -8,6 +8,7 @@ import {
   buildTeacherAlignmentRecommendations,
   getCourseCurriculumPlan,
 } from "@/lib/curriculum/learning-path";
+import RecentArtifactsPanel from "@/components/teacher/RecentArtifactsPanel";
 import type { CourseOverview } from "@/lib/server/data";
 import type {
   LearnerProgressStatus,
@@ -194,6 +195,7 @@ export default function TeacherWorkspaceClient({
   const [addClassForm, setAddClassForm] =
     useState<ClassFormState>(DEFAULT_CLASS_FORM);
   const [addLearnerName, setAddLearnerName] = useState("");
+  const [addLearnerEmail, setAddLearnerEmail] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [isWorkspaceRefreshing, setIsWorkspaceRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -720,12 +722,16 @@ export default function TeacherWorkspaceClient({
       const response = await fetch(`/api/teach/class/${activeClassId}/learner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: addLearnerName }),
+        body: JSON.stringify({
+          name: addLearnerName,
+          userEmail: addLearnerEmail,
+        }),
       });
       if (!response.ok) {
         throw new Error(await readError(response, "Unable to add learner."));
       }
       setAddLearnerName("");
+      setAddLearnerEmail("");
       setNotice("Learner added.");
       await refreshWorkspace({ classId: activeClassId });
     } catch (loadError) {
@@ -853,21 +859,52 @@ export default function TeacherWorkspaceClient({
         </div>
       )}
 
-      <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-sm">
+      <section className="rounded-3xl border border-white/80 bg-white/94 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
+        <div className="mb-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Active classroom
+            </p>
+            <h2
+              className="mt-2 text-2xl font-semibold text-slate-950"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {activeClass?.name ?? "Select a class"}
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Switch classes, manage learner access, and keep classroom setup actions in one place.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+              <p className="text-lg font-semibold text-slate-950">{workspace.classes.length}</p>
+              <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Classes</p>
+            </div>
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2">
+              <p className="text-lg font-semibold text-sky-950">{workspace.learners.length}</p>
+              <p className="font-semibold uppercase tracking-[0.14em] text-sky-700">Learners</p>
+            </div>
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2">
+              <p className="text-lg font-semibold text-amber-950">{workspace.archivedClasses.length}</p>
+              <p className="font-semibold uppercase tracking-[0.14em] text-amber-700">Deleted</p>
+            </div>
+          </div>
+        </div>
+
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => setShowQrCode((current) => !current)}
-            className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-sky-800 transition hover:border-sky-300"
+            className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:border-sky-300"
           >
-            School QR code
+            Show school QR
           </button>
           <button
             type="button"
             onClick={() => setShowArchived((current) => !current)}
-            className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 transition hover:border-slate-300"
+            className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
           >
-            Restore deleted classes ({workspace.archivedClasses.length})
+            Restore deleted ({workspace.archivedClasses.length})
           </button>
           <button
             type="button"
@@ -876,7 +913,7 @@ export default function TeacherWorkspaceClient({
               setShowEditClass(true);
             }}
             disabled={!activeClass}
-            className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-800 transition hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 transition hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Edit class
           </button>
@@ -964,8 +1001,20 @@ export default function TeacherWorkspaceClient({
         </div>
       </section>
 
-      <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-sm">
-        <div className="mb-4 hidden flex-wrap gap-2 md:flex">
+      <section className="rounded-3xl border border-white/80 bg-white/94 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Workspace mode
+            </p>
+            <h2
+              className="mt-1 text-xl font-semibold text-slate-950"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {TAB_LABELS[activeTab]}
+            </h2>
+          </div>
+          <div className="hidden flex-wrap gap-2 md:flex">
           {(Object.keys(tabRoutes) as WorkspaceTab[]).map((tab) => (
             <Link
               key={tab}
@@ -976,6 +1025,7 @@ export default function TeacherWorkspaceClient({
               {TAB_LABELS[tab]}
             </Link>
           ))}
+          </div>
         </div>
 
         {activeTab === "teach" && (
@@ -1320,6 +1370,13 @@ export default function TeacherWorkspaceClient({
                 placeholder="Learner name"
                 className="min-w-[220px] flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
               />
+              <input
+                type="email"
+                value={addLearnerEmail}
+                onChange={(event) => setAddLearnerEmail(event.target.value)}
+                placeholder="Learner account email"
+                className="min-w-[240px] flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+              />
               <button
                 type="submit"
                 disabled={isPending || !activeClassId}
@@ -1459,6 +1516,8 @@ export default function TeacherWorkspaceClient({
                 </div>
               </div>
             </div>
+
+            <RecentArtifactsPanel classId={activeClassId} />
           </div>
         )}
 

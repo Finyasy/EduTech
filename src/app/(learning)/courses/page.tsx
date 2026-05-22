@@ -1,14 +1,20 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
+import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
+import MissionArtwork from "@/components/shared/MissionArtwork";
 import SiteHeader from "@/components/shared/SiteHeader";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
 import {
   compareCoursesByCurriculumPlan,
   getCourseCurriculumPlan,
   getCourseSequenceForAgeBand,
 } from "@/lib/curriculum/learning-path";
+import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import { listCourses } from "@/lib/server/data";
 import type { CourseOverview } from "@/lib/server/data";
 
 export const revalidate = 120;
+const coursesAuthTimeoutMs = 900;
 
 type AgeBandKey = "5-7" | "8-10" | "11-14" | "mixed";
 
@@ -184,6 +190,12 @@ function groupSummary(group: AgeBandSection) {
 }
 
 export default async function CoursesPage() {
+  const authState = await getAuthStateWithTimeout(coursesAuthTimeoutMs);
+
+  if (authState.status === "unauthenticated") {
+    redirect(buildSignInRedirectUrl("/courses"));
+  }
+
   const courses: CourseOverview[] = await listCourses();
   const showDelayedDataBadge = courses.some((course) => course.isFallbackData);
   const totalLessons = courses.reduce((sum, course) => sum + course.lessonCount, 0);
@@ -236,6 +248,15 @@ export default async function CoursesPage() {
       <SiteHeader withAuth={false} />
 
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 pb-20 pt-8 md:px-8">
+        {authState.status === "timed_out" && (
+          <LearnerRouteAuthBridge
+            redirectUrl="/courses"
+            eyebrow="Learner session"
+            title="Checking your course library access."
+            description="The library shell is ready. If your session expired, we will move you to sign-in before opening the full mission catalog."
+          />
+        )}
+
         <header className="relative overflow-hidden rounded-[2.75rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] px-6 py-8 text-white shadow-skyline md:px-10 md:py-12">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute -left-8 top-20 h-44 w-44 rounded-full bg-amber-300/18 blur-3xl" />
@@ -243,7 +264,7 @@ export default async function CoursesPage() {
             <div className="absolute bottom-0 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-emerald-300/12 blur-3xl" />
           </div>
 
-          <div className="relative grid gap-8 lg:grid-cols-[1.06fr_0.94fr] lg:items-center">
+          <div className="relative grid gap-8 lg:grid-cols-[1.06fr_0.94fr] lg:items-start">
             <div className="space-y-7">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-white/78">
@@ -288,39 +309,31 @@ export default async function CoursesPage() {
                 </a>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="flex flex-wrap gap-2 text-sm font-semibold text-white/84">
                 {[
                   {
                     value: String(courses.length),
-                    label: "mission experiences",
-                    detail: "Age-banded and sequenced for progression",
+                    label: "missions",
                   },
                   {
                     value: String(totalLessons),
-                    label: "lesson launches",
-                    detail: "Shorter steps with visible session rhythm",
+                    label: "lessons",
                   },
                   {
                     value: String(stageCounts.Explorer ?? 0),
-                    label: "explorer paths",
-                    detail: "Pattern play, sorting, and guided first wins",
+                    label: "Explorer paths",
                   },
                   {
                     value: String((stageCounts.Builder ?? 0) + (stageCounts.Creator ?? 0)),
-                    label: "builder + creator tracks",
-                    detail: "Projects, data, apps, and demo moments",
+                    label: "Builder + Creator",
                   },
                 ].map((tile) => (
-                  <article
+                  <span
                     key={tile.label}
-                    className="rounded-[1.65rem] border border-white/10 bg-white/6 p-4 backdrop-blur-sm"
+                    className="rounded-full border border-white/12 bg-white/10 px-4 py-2"
                   >
-                    <p className="text-2xl font-semibold text-white">{tile.value}</p>
-                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60">
-                      {tile.label}
-                    </p>
-                    <p className="mt-2 text-sm leading-5 text-white/68">{tile.detail}</p>
-                  </article>
+                    {tile.value} {tile.label}
+                  </span>
                 ))}
               </div>
             </div>
@@ -329,6 +342,11 @@ export default async function CoursesPage() {
               <div className="glass-shell relative overflow-hidden rounded-[2rem] border border-white/12 p-5 shadow-[0_28px_80px_rgba(15,23,42,0.26)]">
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[linear-gradient(135deg,rgba(252,211,77,0.18),rgba(125,211,252,0.16),transparent)]" />
                 <div className="relative space-y-5">
+                  <MissionArtwork
+                    className="h-52"
+                    imageClassName="object-[center_42%]"
+                    priority
+                  />
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
@@ -341,17 +359,14 @@ export default async function CoursesPage() {
                         Every age path gets a clear hero mission.
                       </h2>
                     </div>
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-right text-xs font-semibold text-emerald-900">
-                      Ready to launch
-                    </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {featuredTracks.map(({ group, course, curriculumPlan }) => (
+                  <div className="grid gap-3">
+                    {featuredTracks.slice(0, 2).map(({ group, course, curriculumPlan }) => (
                       <Link
                         key={course.id}
                         href={`/courses/${course.id}`}
-                        className="group block rounded-[1.7rem] border border-slate-200/80 bg-white/88 p-4 transition hover:-translate-y-0.5 hover:border-slate-300"
+                        className="group block rounded-[1.5rem] border border-slate-200/80 bg-white/94 p-4 transition hover:-translate-y-0.5 hover:border-slate-300"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div>
@@ -380,22 +395,6 @@ export default async function CoursesPage() {
                           <span className="text-sm font-semibold text-slate-400 transition group-hover:text-slate-700">
                             Open
                           </span>
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          {blendRows(course.id).map((row) => (
-                            <div key={`${course.id}-${row.key}`} className="space-y-1.5">
-                              <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                                <span>{row.label}</span>
-                                <span>{row.value}%</span>
-                              </div>
-                              <div className="h-2 rounded-full bg-slate-100">
-                                <div
-                                  className={`h-full rounded-full bg-gradient-to-r ${row.barClass}`}
-                                  style={{ width: `${row.value}%` }}
-                                />
-                              </div>
-                            </div>
-                          ))}
                         </div>
                       </Link>
                     ))}

@@ -37,19 +37,19 @@ export default async function SiteHeader({
     : user?.role === "ADMIN" || user?.role === "TEACHER";
 
   return (
-    <header className="sticky top-0 z-40 px-4 pt-4">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between rounded-full border border-white/60 bg-white/72 px-4 py-3 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl">
+    <header className="sticky top-0 z-40 px-3 pt-3 sm:px-4 sm:pt-4">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-2 overflow-hidden rounded-[1.75rem] border border-white/70 bg-white/90 px-3 py-2.5 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl sm:rounded-full sm:px-4 sm:py-3">
         <Link
           href="/"
-          className="inline-flex min-h-11 items-center gap-3 rounded-full pr-2 text-lg font-semibold tracking-tight text-slate-950"
+          className="inline-flex min-h-11 min-w-0 shrink items-center gap-2 rounded-full pr-1 text-base font-semibold tracking-tight text-slate-950 sm:gap-3 sm:pr-2 sm:text-lg"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f59e0b_0%,#fde68a_38%,#a7f3d0_72%,#bae6fd_100%)] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_20px_rgba(15,23,42,0.12)]">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f59e0b_0%,#fde68a_38%,#a7f3d0_72%,#bae6fd_100%)] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_20px_rgba(15,23,42,0.12)]">
             LB
           </span>
-          LearnBridge
+          <span className="truncate">LearnBridge</span>
         </Link>
-        <nav className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <nav className="flex min-w-0 shrink-0 items-center gap-1 text-sm font-semibold text-slate-700 sm:gap-2">
           <NavLinks items={navItems} clerkEnabled={clerkEnabled} />
           {clerkEnabled && <AuthNav isStaff={isStaff} isAdmin={isAdmin} />}
         </nav>

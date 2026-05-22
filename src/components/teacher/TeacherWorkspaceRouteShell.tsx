@@ -313,7 +313,18 @@ export default function TeacherWorkspaceRouteShell({
 
   if (isLoading && !workspace) {
     return (
-      <section className="rounded-3xl border border-white/70 bg-white/85 p-6 shadow-sm">
+      <section className="rounded-3xl border border-white/80 bg-white/92 p-6 shadow-sm">
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-600">
+            Loading workspace
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+            Preparing your teaching view.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-700">
+            Class lists, progress buckets, and aligned missions will appear here shortly.
+          </p>
+        </div>
         <div className="mb-5 flex gap-2">
           {Array.from({ length: 4 }).map((_, index) => (
             <div

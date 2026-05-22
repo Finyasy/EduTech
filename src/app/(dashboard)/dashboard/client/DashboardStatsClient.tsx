@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import MissionArtwork from "@/components/shared/MissionArtwork";
 import {
   getLearnerBadgesFromStats,
   getLearnerRecommendationFromStats,
@@ -17,6 +18,7 @@ const fallbackStats: DashboardStats = {
   completedTotal: 0,
   completedThisWeek: 0,
   streakDays: 0,
+  mastery: { ai: 0, coding: 0, math: 0 },
 };
 
 export default function DashboardStatsClient() {
@@ -62,9 +64,9 @@ export default function DashboardStatsClient() {
     };
   }, [router]);
 
-  const aiMastery = clampPercent(stats.completedTotal * 12 + stats.completedThisWeek * 8);
-  const codingMastery = clampPercent(stats.completedTotal * 10 + stats.streakDays * 5);
-  const mathMastery = clampPercent(stats.completedTotal * 9 + stats.completedThisWeek * 10);
+  const aiMastery = clampPercent(stats.mastery?.ai ?? 0);
+  const codingMastery = clampPercent(stats.mastery?.coding ?? 0);
+  const mathMastery = clampPercent(stats.mastery?.math ?? 0);
   const badges = getLearnerBadgesFromStats(stats);
   const nextMission = getLearnerRecommendationFromStats(stats);
   const dailyGoalMinutes = stats.completedTotal > 0 ? 20 : 10;
@@ -88,6 +90,12 @@ export default function DashboardStatsClient() {
 
       <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
         <article className="rounded-[2.5rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] p-6 text-white shadow-skyline md:p-8">
+          <MissionArtwork
+            className="mb-6 h-56 border-white/15"
+            imageClassName="object-[center_42%]"
+            label="Learner dashboard mission studio"
+            priority
+          />
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/58">
             Progress cockpit
           </p>

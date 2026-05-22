@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
+import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
+import MissionArtwork from "@/components/shared/MissionArtwork";
 import SiteHeader from "@/components/shared/SiteHeader";
+import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
 import { getCourseCurriculumPlan } from "@/lib/curriculum/learning-path";
+import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import { getCourse, listLessons } from "@/lib/server/data";
 
 export const revalidate = 120;
+const courseDetailAuthTimeoutMs = 900;
 
 type CourseDetailPageProps = {
   params: Promise<{ courseId: string }>;
@@ -84,6 +89,12 @@ export async function generateMetadata({
 
 export default async function CourseDetailPage({ params }: CourseDetailPageProps) {
   const { courseId } = await params;
+  const authState = await getAuthStateWithTimeout(courseDetailAuthTimeoutMs);
+
+  if (authState.status === "unauthenticated") {
+    redirect(buildSignInRedirectUrl(`/courses/${courseId}`));
+  }
+
   const course = await getCourse(courseId);
 
   if (!course) {
@@ -133,6 +144,15 @@ export default async function CourseDetailPage({ params }: CourseDetailPageProps
       <SiteHeader withAuth={false} />
 
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 pb-20 pt-8 md:px-8">
+        {authState.status === "timed_out" && (
+          <LearnerRouteAuthBridge
+            redirectUrl={`/courses/${courseId}`}
+            eyebrow="Learner session"
+            title="Checking your mission access."
+            description="The mission page is ready. If your session expired, we will move you to sign-in before opening the private course detail."
+          />
+        )}
+
         <header className="relative overflow-hidden rounded-[2.75rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] px-6 py-8 text-white shadow-skyline md:px-10 md:py-12">
           {imageUrl ? (
             <div
@@ -216,6 +236,12 @@ export default async function CourseDetailPage({ params }: CourseDetailPageProps
             <div className="glass-shell relative overflow-hidden rounded-[2rem] border border-white/12 p-5 shadow-[0_28px_80px_rgba(15,23,42,0.26)]">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[linear-gradient(135deg,rgba(252,211,77,0.18),rgba(125,211,252,0.16),transparent)]" />
               <div className="relative space-y-5">
+                <MissionArtwork
+                  className="h-52"
+                  imageClassName="object-[center_42%]"
+                  label={`${course.title} mission artwork`}
+                  priority
+                />
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">

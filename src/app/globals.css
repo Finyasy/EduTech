@@ -53,7 +53,7 @@
   --learner-sky: #7dd3fc;
   --learner-mint: #bbf7d0;
   --learner-gold: #fcd34d;
-  --learner-shell: rgba(255, 255, 255, 0.74);
+  --learner-shell: rgba(255, 255, 255, 0.92);
   --radius: 0.625rem;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -147,6 +147,28 @@
   .glass-shell {
     background: var(--learner-shell);
     backdrop-filter: blur(24px);
+  }
+
+  :where(
+    [class*="text-white/48"],
+    [class*="text-white/52"],
+    [class*="text-white/54"],
+    [class*="text-white/58"],
+    [class*="text-white/60"]
+  ) {
+    color: rgba(255, 255, 255, 0.76) !important;
+  }
+
+  :where([class*="text-white/66"], [class*="text-white/68"], [class*="text-white/70"], [class*="text-white/72"]) {
+    color: rgba(255, 255, 255, 0.84) !important;
+  }
+
+  :where([class*="text-slate-400"]) {
+    color: rgb(71, 85, 105) !important;
+  }
+
+  :where([class*="bg-white/6"], [class*="bg-white/8"]) {
+    background-color: rgba(255, 255, 255, 0.13) !important;
   }
 
   .shadow-skyline {

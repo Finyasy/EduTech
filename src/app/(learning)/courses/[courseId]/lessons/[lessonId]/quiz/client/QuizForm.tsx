@@ -96,12 +96,12 @@ export default function QuizForm({ lessonId, questions }: QuizFormProps) {
         return (
           <div
             key={question.id}
-            className={`rounded-3xl border p-6 ${
+            className={`rounded-3xl border p-6 shadow-[0_18px_44px_rgba(15,23,42,0.08)] ${
               showFeedback
                 ? isCorrect
-                  ? "border-emerald-200 bg-emerald-50/80"
-                  : "border-rose-200 bg-rose-50/80"
-                : "border-white/70 bg-white/90"
+                  ? "border-emerald-200 bg-emerald-50/92"
+                  : "border-rose-200 bg-rose-50/92"
+                : "border-white/80 bg-white/94"
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -175,7 +175,7 @@ export default function QuizForm({ lessonId, questions }: QuizFormProps) {
                   </p>
                 )}
                 {qResult.explanation && (
-                  <p className="mt-2 text-amber-800">{qResult.explanation}</p>
+                  <p className="mt-2 text-amber-900">{qResult.explanation}</p>
                 )}
               </div>
             )}
@@ -187,7 +187,7 @@ export default function QuizForm({ lessonId, questions }: QuizFormProps) {
           </div>
         );
       })}
-      <div className="rounded-3xl border border-white/70 bg-white/90 p-6">
+      <div className="rounded-3xl border border-white/80 bg-white/94 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
         <button
           type="button"
           onClick={handleSubmit}
