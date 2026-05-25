@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  isDatabaseFailureError,
+  parseJsonBody,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 import { advanceLearnerProgressStatus } from "@/lib/server/teacher-store";
 
@@ -43,6 +47,9 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     return NextResponse.json({ status: nextStatus });
   } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "teacher-session-status-update");
+    }
     return NextResponse.json(
       {
         error:

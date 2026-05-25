@@ -3,7 +3,11 @@ import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { getPrisma } from "@/lib/server/prisma";
 import { requireAdmin } from "@/lib/server/auth";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
 
 const ageBandSchema = z.enum(["5-7", "8-10", "11-14"]);
 const pathwayStageSchema = z.enum(["Explorer", "Builder", "Creator"]);
@@ -53,21 +57,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const course = await prisma.course.create({
-    data: {
-      title: payload.data.title,
-      description: payload.data.description,
-      gradeLevel: payload.data.gradeLevel,
-      ageBand: payload.data.ageBand ?? null,
-      pathwayStage: payload.data.pathwayStage ?? null,
-      aiFocus: payload.data.aiFocus ?? null,
-      codingFocus: payload.data.codingFocus ?? null,
-      mathFocus: payload.data.mathFocus ?? null,
-      missionOutcome: payload.data.missionOutcome ?? null,
-      sessionBlueprint: payload.data.sessionBlueprint ?? null,
-      isPublished: payload.data.isPublished ?? false,
-    },
-  });
+  let course;
+  try {
+    course = await withRouteTimeout(
+      prisma.course.create({
+        data: {
+          title: payload.data.title,
+          description: payload.data.description,
+          gradeLevel: payload.data.gradeLevel,
+          ageBand: payload.data.ageBand ?? null,
+          pathwayStage: payload.data.pathwayStage ?? null,
+          aiFocus: payload.data.aiFocus ?? null,
+          codingFocus: payload.data.codingFocus ?? null,
+          mathFocus: payload.data.mathFocus ?? null,
+          missionOutcome: payload.data.missionOutcome ?? null,
+          sessionBlueprint: payload.data.sessionBlueprint ?? null,
+          isPublished: payload.data.isPublished ?? false,
+        },
+      }),
+      "admin course create",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, "admin-course-create");
+  }
 
   revalidateTag("courses", { expire: 0 });
   revalidateTag(`course:${course.id}`, { expire: 0 });

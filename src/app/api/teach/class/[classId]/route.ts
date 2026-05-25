@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  isDatabaseFailureError,
+  parseJsonBody,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 import {
   archiveTeacherClassroom,
@@ -66,6 +70,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const classroom = await restoreTeacherClassroom(ownerKey, classId);
     return NextResponse.json({ classroom });
   } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "teacher-class-update");
+    }
     return NextResponse.json(
       {
         error:

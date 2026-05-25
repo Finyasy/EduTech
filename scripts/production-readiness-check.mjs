@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env.local" });
+dotenv.config({ path: ".env" });
+
 const strict = process.argv.includes("--strict");
+const isProductionTarget =
+  strict ||
+  getEnv("VERCEL_ENV") === "production" ||
+  getEnv("NODE_ENV") === "production";
 
 const errors = [];
 const warnings = [];
@@ -54,23 +63,42 @@ function validatePostgresUrl(name, value, required) {
 
 function validateAppUrl(value) {
   if (!value) {
-    addIssue(errors, "NEXT_PUBLIC_APP_URL is missing.");
+    addIssue(
+      isProductionTarget ? errors : warnings,
+      "NEXT_PUBLIC_APP_URL is missing.",
+    );
     return;
   }
 
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== "https:") {
-      addIssue(errors, "NEXT_PUBLIC_APP_URL must use https:// in production.");
+      addIssue(
+        isProductionTarget ? errors : warnings,
+        "NEXT_PUBLIC_APP_URL must use https:// in production.",
+      );
     }
   } catch {
-    addIssue(errors, "NEXT_PUBLIC_APP_URL is not a valid URL.");
+    addIssue(
+      isProductionTarget ? errors : warnings,
+      "NEXT_PUBLIC_APP_URL is not a valid URL.",
+    );
   }
 }
 
 function validateClerkKeys(pk, sk) {
-  if (!pk) addIssue(errors, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing.");
-  if (!sk) addIssue(errors, "CLERK_SECRET_KEY is missing.");
+  if (!pk) {
+    addIssue(
+      isProductionTarget ? errors : warnings,
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is missing.",
+    );
+  }
+  if (!sk) {
+    addIssue(
+      isProductionTarget ? errors : warnings,
+      "CLERK_SECRET_KEY is missing.",
+    );
+  }
   if (!pk || !sk) return;
 
   if (containsPlaceholder(pk) || containsPlaceholder(sk)) {
@@ -78,11 +106,17 @@ function validateClerkKeys(pk, sk) {
   }
 
   if (!pk.startsWith("pk_live_")) {
-    addIssue(errors, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must be a production key (pk_live_...).");
+    addIssue(
+      isProductionTarget ? errors : warnings,
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must be a production key (pk_live_...).",
+    );
   }
 
   if (!sk.startsWith("sk_live_")) {
-    addIssue(errors, "CLERK_SECRET_KEY must be a production key (sk_live_...).");
+    addIssue(
+      isProductionTarget ? errors : warnings,
+      "CLERK_SECRET_KEY must be a production key (sk_live_...).",
+    );
   }
 }
 

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 import { getTeacherWorkspaceSnapshot } from "@/lib/server/teacher-store";
+import {
+  isDatabaseFailureError,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 
 const querySchema = z.object({
   classId: z.string().optional(),
@@ -33,18 +37,26 @@ export async function GET(request: Request) {
     );
   }
 
-  const workspace = await getTeacherWorkspaceSnapshot(
-    {
-      ownerKey,
-      classId: parsed.data.classId,
-      subjectId: parsed.data.subjectId,
-      strandId: parsed.data.strandId,
-      activityId: parsed.data.activityId,
-    },
-    {
-      detailLevel: parsed.data.detail ?? "full",
-    },
-  );
+  let workspace;
+  try {
+    workspace = await getTeacherWorkspaceSnapshot(
+      {
+        ownerKey,
+        classId: parsed.data.classId,
+        subjectId: parsed.data.subjectId,
+        strandId: parsed.data.strandId,
+        activityId: parsed.data.activityId,
+      },
+      {
+        detailLevel: parsed.data.detail ?? "full",
+      },
+    );
+  } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "teacher-workspace");
+    }
+    throw error;
+  }
 
   return NextResponse.json(workspace);
 }

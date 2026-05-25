@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  isDatabaseFailureError,
+  parseJsonBody,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 import { addTeacherLearner } from "@/lib/server/teacher-store";
 
 const createLearnerSchema = z.object({
   name: z.string().min(1),
+  userEmail: z.string().trim().email().optional().or(z.literal("")),
 });
 
 type RouteParams = {
@@ -36,6 +41,9 @@ export async function POST(request: Request, { params }: RouteParams) {
     const learner = await addTeacherLearner(ownerKey, classId, payload.data);
     return NextResponse.json({ learner }, { status: 201 });
   } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "teacher-learner-create");
+    }
     return NextResponse.json(
       {
         error:

@@ -10,6 +10,8 @@ const USER_MEMORY_CACHE_STALE_TTL_MS =
     ? 30 * 60 * 1000
     : USER_MEMORY_CACHE_TTL_MS;
 const ACCESS_LOOKUP_TIMEOUT_MS = 1_200;
+const AUTH_QUERY_TIMEOUT_MS = 1_000;
+const CLERK_SYNC_TIMEOUT_MS = 1_000;
 type AccessUser = Pick<User, "id" | "email" | "name" | "role">;
 type TimedCacheEntry<T> = { expiresAt: number; staleAt: number; value: T };
 const globalForAuthCache = globalThis as typeof globalThis & {
@@ -37,6 +39,22 @@ const parseAdminEmails = () =>
 
 const parseTeacherEmails = () =>
   parseEmailList(process.env.TEACHER_EMAILS ?? "");
+
+const shouldUseRequestTimeClerkSync = () =>
+  process.env.NODE_ENV !== "production" ||
+  !process.env.CLERK_WEBHOOK_SIGNING_SECRET;
+
+const withAuthLookupTimeout = <T,>(
+  promise: Promise<T>,
+  label: string,
+  timeoutMs: number,
+) =>
+  Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs),
+    ),
+  ]);
 
 const getRoleForEmail = (email: string) => {
   const normalizedEmail = email.toLowerCase();
@@ -137,6 +155,9 @@ const toAccessUser = (
   };
 };
 
+export const isLearnerRole = (role: User["role"] | null | undefined) =>
+  role === "STUDENT";
+
 export type AuthState =
   | { status: "disabled"; userId: null }
   | { status: "timed_out"; userId: null }
@@ -206,34 +227,20 @@ export async function ensureUserWithTimeout(timeoutMs: number) {
   }
 }
 
-async function getAccessUserFromClerk(userId: string): Promise<AccessUser | null> {
-  const staleUser = readAccessUserMemoryCache(userId, { allowStale: true });
-  if (!process.env.CLERK_SECRET_KEY) {
-    return staleUser;
+export async function ensureLearnerByIdWithTimeout(
+  userId: string,
+  timeoutMs: number,
+) {
+  const user = await ensureUserByIdWithTimeout(userId, timeoutMs);
+  if (!user) {
+    return { status: "unauthorized" as const, user: null };
   }
 
-  try {
-    const client = await clerkClient();
-    const clerkUser = await client.users.getUser(userId);
-    const primaryEmail = clerkUser?.emailAddresses?.[0]?.emailAddress;
-
-    if (!primaryEmail) {
-      return staleUser;
-    }
-
-    const displayName =
-      [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
-      null;
-
-    return writeAccessUserMemoryCache({
-      id: userId,
-      email: primaryEmail,
-      name: displayName,
-      role: getRoleForEmail(primaryEmail),
-    });
-  } catch {
-    return staleUser;
+  if (!isLearnerRole(user.role)) {
+    return { status: "forbidden" as const, user: null };
   }
+
+  return { status: "ok" as const, user };
 }
 
 async function getAccessUserWithTimeout(
@@ -254,7 +261,7 @@ async function getAccessUserWithTimeout(
         if (accessUser) {
           return writeAccessUserMemoryCache(accessUser);
         }
-        return getAccessUserFromClerk(userId);
+        return staleUser;
       })(),
       new Promise<AccessUser | null>((resolve) =>
         setTimeout(() => resolve(staleUser), timeoutMs),
@@ -278,9 +285,13 @@ async function ensureUserById(userId: string) {
   }
 
   try {
-    const existingUser = await prisma.user.findUnique({
-      where: { id: userId },
-    });
+    const existingUser = await withAuthLookupTimeout(
+      prisma.user.findUnique({
+        where: { id: userId },
+      }),
+      "auth user lookup",
+      AUTH_QUERY_TIMEOUT_MS,
+    );
 
     if (existingUser?.email) {
       const role = getRoleForEmail(existingUser.email);
@@ -289,19 +300,27 @@ async function ensureUserById(userId: string) {
       }
 
       return writeUserMemoryCache(
-        await prisma.user.update({
-          where: { id: userId },
-          data: { role },
-        }),
+        await withAuthLookupTimeout(
+          prisma.user.update({
+            where: { id: userId },
+            data: { role },
+          }),
+          "auth user role sync",
+          AUTH_QUERY_TIMEOUT_MS,
+        ),
       );
     }
 
-    if (!process.env.CLERK_SECRET_KEY) {
+    if (!process.env.CLERK_SECRET_KEY || !shouldUseRequestTimeClerkSync()) {
       return writeUserMemoryCache(existingUser);
     }
 
     const client = await clerkClient();
-    const clerkUser = await client.users.getUser(userId);
+    const clerkUser = await withAuthLookupTimeout(
+      client.users.getUser(userId),
+      "clerk user lookup",
+      CLERK_SYNC_TIMEOUT_MS,
+    );
     const primaryEmail = clerkUser?.emailAddresses?.[0]?.emailAddress;
 
     if (!primaryEmail) {
@@ -315,20 +334,24 @@ async function ensureUserById(userId: string) {
     const role = getRoleForEmail(primaryEmail);
 
     return writeUserMemoryCache(
-      await prisma.user.upsert({
-        where: { id: userId },
-        update: {
-          email: primaryEmail,
-          name: displayName,
-          role,
-        },
-        create: {
-          id: userId,
-          email: primaryEmail,
-          name: displayName,
-          role,
-        },
-      }),
+      await withAuthLookupTimeout(
+        prisma.user.upsert({
+          where: { id: userId },
+          update: {
+            email: primaryEmail,
+            name: displayName,
+            role,
+          },
+          create: {
+            id: userId,
+            email: primaryEmail,
+            name: displayName,
+            role,
+          },
+        }),
+        "auth user upsert",
+        AUTH_QUERY_TIMEOUT_MS,
+      ),
     );
   } catch (error) {
     if (staleUser) {

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  isDatabaseFailureError,
+  parseJsonBody,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 import { assignTeacherMissionToClass } from "@/lib/server/teacher-store";
 
@@ -52,6 +56,9 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     return NextResponse.json({ assignment }, { status: 201 });
   } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "teacher-assignment-create");
+    }
     return NextResponse.json(
       {
         error:

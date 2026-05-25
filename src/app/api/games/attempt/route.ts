@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
-import { ensureUser } from "@/lib/server/auth";
+import { ensureLearnerByIdWithTimeout } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
+
+const USER_LOOKUP_TIMEOUT_MS = 1_500;
 
 const attemptSchema = z.object({
   gameLevelId: z.string().min(1),
@@ -39,28 +45,60 @@ export async function POST(request: Request) {
     );
   }
 
-  const user = await ensureUser();
-  if (!user) {
+  const learnerCheck = await ensureLearnerByIdWithTimeout(
+    userId,
+    USER_LOOKUP_TIMEOUT_MS,
+  );
+  if (learnerCheck.status === "unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (learnerCheck.status === "forbidden") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const user = learnerCheck.user;
 
   const { gameLevelId, score, timeMs } = payload.data;
 
-  const level = await prisma.gameLevel.findUnique({
-    where: { id: gameLevelId },
-  });
+  let level;
+  try {
+    level = await withRouteTimeout(
+      prisma.gameLevel.findUnique({
+        where: { id: gameLevelId },
+      }),
+      "game level lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "game-attempt-level-lookup",
+      userId,
+      gameLevelId,
+      operation: "lookup",
+    });
+  }
   if (!level) {
     return NextResponse.json({ error: "Level not found" }, { status: 404 });
   }
 
-  await prisma.gameAttempt.create({
-    data: {
+  try {
+    await withRouteTimeout(
+      prisma.gameAttempt.create({
+        data: {
+          userId: user.id,
+          gameLevelId,
+          score,
+          timeMs,
+        },
+      }),
+      "game attempt write",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "game-attempt-write",
       userId: user.id,
       gameLevelId,
-      score,
-      timeMs,
-    },
-  });
+      operation: "create",
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }
