@@ -2,12 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authMock = vi.fn();
-const clerkClientMock = vi.fn();
 const getPrismaMock = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: () => authMock(),
-  clerkClient: () => clerkClientMock(),
+  clerkClient: () => {
+    throw new Error("clerkClient should not be used for access lookup");
+  },
 }));
 
 vi.mock("next/cache", () => ({
@@ -30,7 +31,7 @@ const authCacheGlobal = globalThis as typeof globalThis & {
   __learnBridgeAccessUserMemoryCache?: Map<string, unknown>;
 };
 
-describe("staff/admin access fallback", () => {
+describe("staff/admin access lookup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
@@ -75,21 +76,12 @@ describe("staff/admin access fallback", () => {
     }
   });
 
-  it("allows staff access from Clerk-derived role when Prisma lookup times out", async () => {
+  it("returns unauthorized when Prisma lookup times out without a cached access user", async () => {
     vi.useFakeTimers();
     authMock.mockResolvedValue({ userId: "user_teacher" });
     getPrismaMock.mockReturnValue({
       user: {
         findUnique: vi.fn().mockReturnValue(new Promise(() => {})),
-      },
-    });
-    clerkClientMock.mockResolvedValue({
-      users: {
-        getUser: vi.fn().mockResolvedValue({
-          emailAddresses: [{ emailAddress: "teacher@example.com" }],
-          firstName: "Teacher",
-          lastName: "One",
-        }),
       },
     });
 
@@ -99,40 +91,24 @@ describe("staff/admin access fallback", () => {
     await vi.advanceTimersByTimeAsync(1_201);
     const access = await accessPromise;
 
-    expect(access).toEqual({
-      ok: true,
-      user: {
-        id: "user_teacher",
-        email: "teacher@example.com",
-        name: "Teacher One",
-        role: "TEACHER",
-      },
-    });
+    expect(access).toEqual({ ok: false, status: 401 });
   });
 
-  it("keeps admin access strict when Clerk fallback resolves a teacher role", async () => {
-    vi.useFakeTimers();
+  it("keeps admin access strict when the persisted user role is teacher", async () => {
     authMock.mockResolvedValue({ userId: "user_teacher" });
     getPrismaMock.mockReturnValue({
       user: {
-        findUnique: vi.fn().mockReturnValue(new Promise(() => {})),
-      },
-    });
-    clerkClientMock.mockResolvedValue({
-      users: {
-        getUser: vi.fn().mockResolvedValue({
-          emailAddresses: [{ emailAddress: "teacher@example.com" }],
-          firstName: "Teacher",
-          lastName: "One",
+        findUnique: vi.fn().mockResolvedValue({
+          id: "user_teacher",
+          email: "teacher@example.com",
+          name: "Teacher One",
+          role: "TEACHER",
         }),
       },
     });
 
     const { requireAdmin } = await import("@/lib/server/auth");
-    const accessPromise = requireAdmin();
-
-    await vi.advanceTimersByTimeAsync(1_201);
-    const access = await accessPromise;
+    const access = await requireAdmin();
 
     expect(access).toEqual({ ok: false, status: 403 });
   });
@@ -142,17 +118,12 @@ describe("staff/admin access fallback", () => {
     authMock.mockResolvedValue({ userId: "user_teacher" });
     getPrismaMock.mockReturnValue({
       user: {
-        findUnique: vi.fn().mockReturnValue(new Promise(() => {})),
-      },
-    });
-    const clerkGetUserMock = vi.fn().mockResolvedValue({
-      emailAddresses: [{ emailAddress: "teacher@example.com" }],
-      firstName: "Teacher",
-      lastName: "One",
-    });
-    clerkClientMock.mockResolvedValue({
-      users: {
-        getUser: clerkGetUserMock,
+        findUnique: vi.fn().mockResolvedValue({
+          id: "user_teacher",
+          email: "teacher@example.com",
+          name: "Teacher One",
+          role: "TEACHER",
+        }),
       },
     });
 
@@ -171,7 +142,6 @@ describe("staff/admin access fallback", () => {
         role: "TEACHER",
       },
     });
-    expect(clerkGetUserMock).toHaveBeenCalledTimes(1);
 
     vi.resetModules();
     authMock.mockResolvedValue({ userId: "user_teacher" });
@@ -180,16 +150,10 @@ describe("staff/admin access fallback", () => {
         findUnique: vi.fn().mockReturnValue(new Promise(() => {})),
       },
     });
-    clerkClientMock.mockResolvedValue({
-      users: {
-        getUser: vi.fn().mockReturnValue(new Promise(() => {})),
-      },
-    });
 
     const { requireStaff: requireStaffAgain } = await import("@/lib/server/auth");
     const secondAccess = await requireStaffAgain();
 
     expect(secondAccess).toEqual(firstAccess);
-    expect(clerkGetUserMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/server/prisma";
+import { isLearnerRole } from "@/lib/server/auth";
 import {
   clearScopeDegraded,
   isScopeDegraded,
@@ -48,6 +49,7 @@ type UpdateClassInput = {
 
 type AddLearnerInput = {
   name: string;
+  userEmail?: string | null;
 };
 
 type TeacherAssignmentAnalyticsFilters = {
@@ -95,6 +97,41 @@ const TEACHER_WRITE_TRANSACTION_TIMEOUT_MS = 1_500;
 const TEACHER_WRITE_QUERY_TIMEOUT_MS = 1_800;
 const TEACHER_WORKSPACE_DEGRADED_SCOPE = "teacher-workspace";
 const ENABLE_WORKSPACE_CACHE = process.env.NODE_ENV !== "test";
+
+const toTeacherStoreLogPayload = (
+  event: string,
+  details: Record<string, string | number | boolean | null | undefined>,
+) => ({
+  event,
+  reason: details.reason ?? "unknown",
+  ...details,
+});
+
+const logTeacherStoreFallback = (
+  event: string,
+  details: Record<string, string | number | boolean | null | undefined>,
+) => {
+  console.warn("[teacher-store-fallback]", toTeacherStoreLogPayload(event, details));
+};
+
+const logTeacherStoreError = (
+  event: string,
+  error: unknown,
+  details: Record<string, string | number | boolean | null | undefined>,
+) => {
+  const reason = error instanceof Error ? error.message : String(error ?? "unknown");
+  const errorName = error instanceof Error ? error.name : typeof error;
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : undefined;
+
+  console.error("[teacher-store-error]", {
+    ...toTeacherStoreLogPayload(event, { ...details, reason }),
+    errorName,
+    errorCode,
+  });
+};
 
 const withTeacherWorkspaceTimeout = <T,>(promise: Promise<T>) =>
   Promise.race<T>([
@@ -675,16 +712,16 @@ const validateClassUpdate = (input: UpdateClassInput) => {
 };
 
 const seededLearners = (classId: string): TeacherLearner[] => [
-  { id: "learner-joy", classId, name: "Joy Nelima", avatarHue: 210, weeklyMinutes: 32, lastWeekMinutes: 19, createdAt: nowIso() },
-  { id: "learner-glory", classId, name: "Glory Ndanu", avatarHue: 344, weeklyMinutes: 28, lastWeekMinutes: 17, createdAt: nowIso() },
-  { id: "learner-joshua", classId, name: "Joshua Simon", avatarHue: 45, weeklyMinutes: 24, lastWeekMinutes: 21, createdAt: nowIso() },
-  { id: "learner-trevor", classId, name: "Trevor Obama", avatarHue: 123, weeklyMinutes: 17, lastWeekMinutes: 11, createdAt: nowIso() },
-  { id: "learner-eunice", classId, name: "Eunice Munini", avatarHue: 271, weeklyMinutes: 11, lastWeekMinutes: 9, createdAt: nowIso() },
-  { id: "learner-frank", classId, name: "Frank Mutetei", avatarHue: 18, weeklyMinutes: 8, lastWeekMinutes: 10, createdAt: nowIso() },
-  { id: "learner-calvin", classId, name: "Calvince Otieno", avatarHue: 195, weeklyMinutes: 5, lastWeekMinutes: 6, createdAt: nowIso() },
-  { id: "learner-adri", classId, name: "Adri Amani", avatarHue: 90, weeklyMinutes: 3, lastWeekMinutes: 7, createdAt: nowIso() },
-  { id: "learner-accem", classId, name: "Accem Muthoni", avatarHue: 250, weeklyMinutes: 22, lastWeekMinutes: 20, createdAt: nowIso() },
-  { id: "learner-favour", classId, name: "Favour Mtwa", avatarHue: 300, weeklyMinutes: 18, lastWeekMinutes: 13, createdAt: nowIso() },
+  { id: "learner-joy", classId, userId: null, name: "Joy Nelima", avatarHue: 210, weeklyMinutes: 32, lastWeekMinutes: 19, createdAt: nowIso() },
+  { id: "learner-glory", classId, userId: null, name: "Glory Ndanu", avatarHue: 344, weeklyMinutes: 28, lastWeekMinutes: 17, createdAt: nowIso() },
+  { id: "learner-joshua", classId, userId: null, name: "Joshua Simon", avatarHue: 45, weeklyMinutes: 24, lastWeekMinutes: 21, createdAt: nowIso() },
+  { id: "learner-trevor", classId, userId: null, name: "Trevor Obama", avatarHue: 123, weeklyMinutes: 17, lastWeekMinutes: 11, createdAt: nowIso() },
+  { id: "learner-eunice", classId, userId: null, name: "Eunice Munini", avatarHue: 271, weeklyMinutes: 11, lastWeekMinutes: 9, createdAt: nowIso() },
+  { id: "learner-frank", classId, userId: null, name: "Frank Mutetei", avatarHue: 18, weeklyMinutes: 8, lastWeekMinutes: 10, createdAt: nowIso() },
+  { id: "learner-calvin", classId, userId: null, name: "Calvince Otieno", avatarHue: 195, weeklyMinutes: 5, lastWeekMinutes: 6, createdAt: nowIso() },
+  { id: "learner-adri", classId, userId: null, name: "Adri Amani", avatarHue: 90, weeklyMinutes: 3, lastWeekMinutes: 7, createdAt: nowIso() },
+  { id: "learner-accem", classId, userId: null, name: "Accem Muthoni", avatarHue: 250, weeklyMinutes: 22, lastWeekMinutes: 20, createdAt: nowIso() },
+  { id: "learner-favour", classId, userId: null, name: "Favour Mtwa", avatarHue: 300, weeklyMinutes: 18, lastWeekMinutes: 13, createdAt: nowIso() },
 ];
 
 const createMemoryWorkspace = (ownerKey: string): MemoryWorkspace => {
@@ -1029,6 +1066,7 @@ const mapClassroomFromDb = (classroom: {
 const mapLearnerFromDb = (learner: {
   id: string;
   classId: string;
+  userId: string | null;
   name: string;
   avatarHue: number;
   weeklyMinutes: number;
@@ -1037,6 +1075,7 @@ const mapLearnerFromDb = (learner: {
 }): TeacherLearner => ({
   id: learner.id,
   classId: learner.classId,
+  userId: learner.userId,
   name: learner.name,
   avatarHue: learner.avatarHue,
   weeklyMinutes: learner.weeklyMinutes,
@@ -1044,40 +1083,49 @@ const mapLearnerFromDb = (learner: {
   createdAt: toIso(learner.createdAt),
 });
 
-async function ensureSchoolProfile(ownerKey: string) {
-  const prisma = getPrisma();
+async function ensureSchoolProfile(
+  ownerKey: string,
+  client?: TeacherStoreDbClient,
+) {
+  const prisma = client ?? getPrisma();
   if (!prisma) {
     return ensureSchoolSettings(ownerKey);
   }
 
-  const existingProfile = await prisma.teacherSchoolProfile.findUnique({
-    where: { ownerKey },
-  });
+  const existingProfile = await withTeacherWriteTimeout(
+    prisma.teacherSchoolProfile.findUnique({
+      where: { ownerKey },
+    }),
+  );
   if (existingProfile) {
     return mapSchoolFromDb(existingProfile);
   }
 
   const defaults = ensureSchoolSettings(ownerKey);
   try {
-    const profile = await prisma.teacherSchoolProfile.create({
-      data: {
-        ownerKey,
-        schoolName: defaults.schoolName,
-        country: defaults.country,
-        appVersion: defaults.appVersion,
-        deviceId: defaults.deviceId,
-        connectivityStatus: defaults.connectivityStatus,
-        contentStatus: defaults.contentStatus,
-        supportEmail: defaults.supportEmail,
-        schoolQrCode: defaults.schoolQrCode,
-      },
-    });
+    const profile = await withTeacherWriteTimeout(
+      prisma.teacherSchoolProfile.create({
+        data: {
+          ownerKey,
+          schoolName: defaults.schoolName,
+          country: defaults.country,
+          appVersion: defaults.appVersion,
+          deviceId: defaults.deviceId,
+          connectivityStatus: defaults.connectivityStatus,
+          contentStatus: defaults.contentStatus,
+          supportEmail: defaults.supportEmail,
+          schoolQrCode: defaults.schoolQrCode,
+        },
+      }),
+    );
 
     return mapSchoolFromDb(profile);
   } catch (error) {
-    const profile = await prisma.teacherSchoolProfile.findUnique({
-      where: { ownerKey },
-    });
+    const profile = await withTeacherWriteTimeout(
+      prisma.teacherSchoolProfile.findUnique({
+        where: { ownerKey },
+      }),
+    );
     if (profile) {
       return mapSchoolFromDb(profile);
     }
@@ -1398,6 +1446,7 @@ async function fetchWorkspaceCoreBaseFromDatabase(
           select: {
             id: true,
             classId: true,
+            userId: true,
             name: true,
             avatarHue: true,
             weeklyMinutes: true,
@@ -1769,6 +1818,15 @@ export async function getTeacherWorkspaceSnapshot(
     return snapshot;
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
+      logTeacherStoreFallback("workspace-snapshot", {
+        ownerKey: query.ownerKey,
+        classId: query.classId,
+        subjectId: query.subjectId,
+        strandId: query.strandId,
+        activityId: query.activityId,
+        detailLevel,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       markScopeDegraded(
         TEACHER_WORKSPACE_DEGRADED_SCOPE,
         error instanceof Error ? error.message : "teacher-workspace-db-failure",
@@ -1820,6 +1878,14 @@ export async function getTeacherWorkspaceSessionStatuses(
     return await refreshTeacherWorkspaceSessionStatuses(query);
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
+      logTeacherStoreFallback("workspace-session-statuses", {
+        ownerKey: query.ownerKey,
+        classId: query.classId,
+        subjectId: query.subjectId,
+        strandId: query.strandId,
+        activityId: query.activityId,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       const snapshot = await getWorkspaceFromMemory(query);
       const result = { sessionStatuses: snapshot.sessionStatuses };
       writeWorkspaceSessionStatusesCache(query, result);
@@ -1862,6 +1928,14 @@ export async function getTeacherWorkspaceAssignments(
     return await refreshTeacherWorkspaceAssignments(query);
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
+      logTeacherStoreFallback("workspace-assignments", {
+        ownerKey: query.ownerKey,
+        classId: query.classId,
+        subjectId: query.subjectId,
+        strandId: query.strandId,
+        activityId: query.activityId,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       const snapshot = await getWorkspaceFromMemory(query);
       const result = {
         assignments: snapshot.assignments,
@@ -1988,6 +2062,7 @@ const addTeacherLearnerMemory = (
   ownerKey: string,
   classId: string,
   name: string,
+  userId: string | null = null,
 ) => {
   const seeded = name
     .split("")
@@ -2004,6 +2079,7 @@ const addTeacherLearnerMemory = (
   const learner: TeacherLearner = {
     id: nextMemoryId(workspace, "learner"),
     classId,
+    userId,
     name,
     avatarHue: seeded % 360,
     weeklyMinutes: 5 + (seeded % 28),
@@ -2125,19 +2201,24 @@ export async function addTeacherClassroom(
   }
 
   try {
-    const prisma = getPrisma()!;
-    await ensureSchoolProfile(ownerKey);
-    const count = await prisma.teacherClassroom.count({ where: { ownerKey } });
+    const classroom = await runTeacherWriteTransaction(async (tx) => {
+      await ensureSchoolProfile(ownerKey, tx);
+      const count = await withTeacherWriteTimeout(
+        tx.teacherClassroom.count({ where: { ownerKey } }),
+      );
 
-    const classroom = await prisma.teacherClassroom.create({
-      data: {
-        ownerKey,
-        name: validated.name,
-        grade: validated.grade,
-        teacherName: validated.teacherName,
-        teacherPhone: validated.teacherPhone,
-        cardColor: CARD_COLORS[count % CARD_COLORS.length],
-      },
+      return withTeacherWriteTimeout(
+        tx.teacherClassroom.create({
+          data: {
+            ownerKey,
+            name: validated.name,
+            grade: validated.grade,
+            teacherName: validated.teacherName,
+            teacherPhone: validated.teacherPhone,
+            cardColor: CARD_COLORS[count % CARD_COLORS.length],
+          },
+        }),
+      );
     });
 
     const mapped = mapClassroomFromDb(classroom);
@@ -2167,24 +2248,29 @@ export async function updateTeacherClassroom(
   }
 
   try {
-    const prisma = getPrisma()!;
-    const existing = await prisma.teacherClassroom.findFirst({
-      where: { id: classId, ownerKey },
-      select: { id: true },
-    });
+    const classroom = await runTeacherWriteTransaction(async (tx) => {
+      const existing = await withTeacherWriteTimeout(
+        tx.teacherClassroom.findFirst({
+          where: { id: classId, ownerKey },
+          select: { id: true },
+        }),
+      );
 
-    if (!existing) {
-      throw new Error("Class not found.");
-    }
+      if (!existing) {
+        throw new Error("Class not found.");
+      }
 
-    const classroom = await prisma.teacherClassroom.update({
-      where: { id: classId },
-      data: {
-        name: validated.nextName,
-        grade: validated.nextGrade,
-        teacherName: validated.nextTeacherName,
-        teacherPhone: validated.nextTeacherPhone,
-      },
+      return withTeacherWriteTimeout(
+        tx.teacherClassroom.update({
+          where: { id: classId },
+          data: {
+            name: validated.nextName,
+            grade: validated.nextGrade,
+            teacherName: validated.nextTeacherName,
+            teacherPhone: validated.nextTeacherPhone,
+          },
+        }),
+      );
     });
 
     const mapped = mapClassroomFromDb(classroom);
@@ -2215,23 +2301,30 @@ async function setClassArchivedState(
   }
 
   try {
-    const prisma = getPrisma()!;
-    const result = await prisma.teacherClassroom.updateMany({
-      where: { id: classId, ownerKey },
-      data: { isArchived },
+    const classroom = await runTeacherWriteTransaction(async (tx) => {
+      const result = await withTeacherWriteTimeout(
+        tx.teacherClassroom.updateMany({
+          where: { id: classId, ownerKey },
+          data: { isArchived },
+        }),
+      );
+
+      if (result.count === 0) {
+        throw new Error("Class not found.");
+      }
+
+      const updated = await withTeacherWriteTimeout(
+        tx.teacherClassroom.findUnique({
+          where: { id: classId },
+        }),
+      );
+
+      if (!updated) {
+        throw new Error("Class not found.");
+      }
+
+      return updated;
     });
-
-    if (result.count === 0) {
-      throw new Error("Class not found.");
-    }
-
-    const classroom = await prisma.teacherClassroom.findUnique({
-      where: { id: classId },
-    });
-
-    if (!classroom) {
-      throw new Error("Class not found.");
-    }
 
     const mapped = mapClassroomFromDb(classroom);
     invalidateWorkspaceSnapshotCache(ownerKey);
@@ -2263,6 +2356,7 @@ export async function addTeacherLearner(
   input: AddLearnerInput,
 ): Promise<TeacherLearner> {
   const name = input.name.trim();
+  const userEmail = input.userEmail?.trim().toLowerCase() ?? null;
   if (!name) {
     throw new Error("Learner name is required.");
   }
@@ -2288,9 +2382,24 @@ export async function addTeacherLearner(
         throw new Error("Class not found.");
       }
 
+      const linkedUser = userEmail
+        ? await tx.user.findUnique({
+            where: { email: userEmail },
+            select: { id: true, role: true },
+          })
+        : null;
+
+      if (userEmail && !linkedUser) {
+        throw new Error("No learner account found for that email.");
+      }
+      if (linkedUser && !isLearnerRole(linkedUser.role)) {
+        throw new Error("Only learner accounts can be linked to a classroom.");
+      }
+
       const learner = await tx.teacherLearner.create({
         data: {
           classId,
+          userId: linkedUser?.id ?? null,
           name,
           avatarHue: seeded % 360,
           weeklyMinutes: 5 + (seeded % 28),
@@ -2449,11 +2558,12 @@ export async function getTeacherAssignmentAnalyticsReport(
       if (!shouldFallbackToMemory(error)) {
         throw error;
       }
-      console.warn(
-        `[teacher-assignments] analytics report falling back to memory reason=${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
+      logTeacherStoreFallback("assignment-analytics-report", {
+        ownerKey: filters.ownerKey,
+        classId: filters.classId,
+        target: filters.target,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
     }
   }
 
@@ -2593,19 +2703,25 @@ export async function assignTeacherMissionToClass(input: {
         classId: input.classId,
       })
     ) {
-      console.warn(
-        `[teacher-assignments] db persistence unavailable, using memory fallback owner=${input.ownerKey} classId=${input.classId} reason=${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
+      logTeacherStoreFallback("assignment-write", {
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+        target: input.target,
+        courseId: input.courseId,
+        activityId: input.activityId,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       const assignment = upsertTeacherMissionAssignmentMemory(input);
       invalidateWorkspaceSnapshotCache(input.ownerKey);
       return assignment;
     }
-    console.error(
-      `[teacher-assignments] failed to persist assignment owner=${input.ownerKey} classId=${input.classId}`,
-      error,
-    );
+    logTeacherStoreError("assignment-write", error, {
+      ownerKey: input.ownerKey,
+      classId: input.classId,
+      target: input.target,
+      courseId: input.courseId,
+      activityId: input.activityId,
+    });
     throw error;
   }
 }

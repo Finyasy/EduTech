@@ -106,4 +106,26 @@ describe("teacher workspace detail routes", () => {
       },
     });
   });
+
+  it("returns 503 when session status hydration fails on the database path", async () => {
+    getTeacherOwnerKeyMock.mockResolvedValue("teacher_1");
+    getTeacherWorkspaceSessionStatusesMock.mockRejectedValue(
+      new Error("Teacher workspace detail query timed out"),
+    );
+
+    const { GET } = await import(
+      "@/app/api/teach/workspace/session-statuses/route"
+    );
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/teach/workspace/session-statuses?classId=class-1&activityId=activity-1",
+      ),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "Database request timed out",
+    });
+  });
 });

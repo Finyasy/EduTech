@@ -9,7 +9,10 @@ import {
   getCourseCurriculumPlan,
 } from "@/lib/curriculum/learning-path";
 import RecentArtifactsPanel from "@/components/teacher/RecentArtifactsPanel";
-import type { CourseOverview } from "@/lib/server/data";
+import type {
+  CourseOverview,
+  TeacherLearnerDashboardSummary,
+} from "@/lib/server/data";
 import type {
   LearnerProgressStatus,
   TeacherActivity,
@@ -44,6 +47,13 @@ type EditClassFormState = {
 };
 
 type LearnersList = TeacherWorkspaceSnapshot["learners"];
+
+type LearnerDashboardState = {
+  learnerId: string;
+  summary: TeacherLearnerDashboardSummary | null;
+  isLoading: boolean;
+  error: string | null;
+};
 
 const STATUS_META: Record<
   LearnerProgressStatus,
@@ -110,6 +120,22 @@ const initialsOf = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+
+const formatActivityDate = (value: string | null) => {
+  if (!value) {
+    return "No activity yet";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Activity date unavailable";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+};
 
 async function readError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({}));
@@ -200,6 +226,8 @@ export default function TeacherWorkspaceClient({
   const [isWorkspaceRefreshing, setIsWorkspaceRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [learnerDashboard, setLearnerDashboard] =
+    useState<LearnerDashboardState | null>(null);
   const refreshRequestIdRef = useRef(0);
   const workspaceRefreshInFlightRef = useRef(false);
 
@@ -520,6 +548,7 @@ export default function TeacherWorkspaceClient({
     }
     setError(null);
     setNotice(null);
+    setLearnerDashboard(null);
     try {
       await refreshWorkspace({ classId });
     } catch (loadError) {
@@ -743,6 +772,49 @@ export default function TeacherWorkspaceClient({
     }
   }
 
+  async function loadLearnerDashboard(learnerId: string) {
+    if (!activeClassId) {
+      return;
+    }
+
+    setLearnerDashboard({
+      learnerId,
+      summary: null,
+      isLoading: true,
+      error: null,
+    });
+
+    try {
+      const response = await fetch(
+        `/api/teach/class/${activeClassId}/learner/${learnerId}/dashboard`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(
+          await readError(response, "Unable to load learner progress."),
+        );
+      }
+
+      const summary = (await response.json()) as TeacherLearnerDashboardSummary;
+      setLearnerDashboard({
+        learnerId,
+        summary,
+        isLoading: false,
+        error: null,
+      });
+    } catch (loadError) {
+      setLearnerDashboard({
+        learnerId,
+        summary: null,
+        isLoading: false,
+        error:
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load learner progress.",
+      });
+    }
+  }
+
   async function advanceLearnerStatus(learnerId: string) {
     if (
       !activeClassId ||
@@ -859,7 +931,7 @@ export default function TeacherWorkspaceClient({
         </div>
       )}
 
-      <section className="rounded-3xl border border-white/80 bg-white/94 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
+      <section className="rounded-3xl border border-white/80 bg-white/95 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
         <div className="mb-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -1001,7 +1073,7 @@ export default function TeacherWorkspaceClient({
         </div>
       </section>
 
-      <section className="rounded-3xl border border-white/80 bg-white/94 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
+      <section className="rounded-3xl border border-white/80 bg-white/95 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -1409,13 +1481,190 @@ export default function TeacherWorkspaceClient({
                       </span>
                       <p className="text-sm font-medium text-slate-900">{learner.name}</p>
                     </div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      {learner.weeklyMinutes} mins
-                    </p>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        {learner.weeklyMinutes} mins
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void loadLearnerDashboard(learner.id)}
+                        disabled={isPending || learnerDashboard?.isLoading}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        View progress
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
             </div>
+
+            {learnerDashboard && (
+              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Learner progress
+                    </p>
+                    <h4 className="mt-1 text-base font-semibold text-slate-900">
+                      {learnerDashboard.summary?.learner.name ??
+                        workspace.learners.find(
+                          (learner) => learner.id === learnerDashboard.learnerId,
+                        )?.name ??
+                        "Selected learner"}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLearnerDashboard(null)}
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {learnerDashboard.isLoading && (
+                  <p className="mt-4 rounded-xl border border-sky-100 bg-sky-50 px-3 py-3 text-sm text-sky-800">
+                    Loading learner progress...
+                  </p>
+                )}
+
+                {learnerDashboard.error && (
+                  <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+                    {learnerDashboard.error}
+                  </p>
+                )}
+
+                {learnerDashboard.summary && (
+                  <div className="mt-4 space-y-4">
+                    {!learnerDashboard.summary.learner.linkedAccount && (
+                      <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                        This learner is not linked to a student account yet. Add the
+                        account email to enable dashboard, quiz, game, and artifact
+                        signals.
+                      </p>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Lessons
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {learnerDashboard.summary.dashboard?.completedTotal ?? 0}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Quiz avg
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {learnerDashboard.summary.quiz.averageScore ?? "-"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Best game
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {learnerDashboard.summary.games.bestScore ?? "-"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Artifacts
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {learnerDashboard.summary.artifacts.reviewedCount}/
+                          {learnerDashboard.summary.artifacts.totalCount}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {(["ai", "coding", "math"] as const).map((area) => (
+                        <div
+                          key={area}
+                          className="rounded-xl border border-slate-100 bg-white px-3 py-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              {area}
+                            </p>
+                            <p className="text-xs font-semibold text-slate-700">
+                              {learnerDashboard.summary?.dashboard?.mastery[area] ?? 0}%
+                            </p>
+                          </div>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-sky-500"
+                              style={{
+                                width: `${
+                                  learnerDashboard.summary.dashboard?.mastery[area] ?? 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                        <p className="font-semibold text-slate-900">Latest activity</p>
+                        <p className="mt-1">
+                          Quiz:{" "}
+                          {formatActivityDate(
+                            learnerDashboard.summary.quiz.latestSubmittedAt,
+                          )}
+                        </p>
+                        <p>
+                          Game:{" "}
+                          {formatActivityDate(
+                            learnerDashboard.summary.games.latestSubmittedAt,
+                          )}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                        <p className="font-semibold text-slate-900">Attempts</p>
+                        <p className="mt-1">
+                          {learnerDashboard.summary.quiz.attemptCount} quiz attempts
+                        </p>
+                        <p>
+                          {learnerDashboard.summary.games.attemptCount} game attempts
+                        </p>
+                      </div>
+                    </div>
+
+                    {learnerDashboard.summary.artifacts.recent.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Recent artifacts
+                        </p>
+                        {learnerDashboard.summary.artifacts.recent.map((artifact) => (
+                          <div
+                            key={artifact.id}
+                            className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {artifact.title}
+                              </p>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                                {artifact.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-600">
+                              {artifact.courseTitle} / {artifact.lessonTitle}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -112,7 +112,7 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              <div className="flex flex-wrap gap-2 text-sm font-semibold text-white/84">
+              <div className="flex flex-wrap gap-2 text-sm font-semibold text-white/90">
                 <span className="rounded-full border border-white/12 bg-white/10 px-4 py-2">
                   3 age paths
                 </span>

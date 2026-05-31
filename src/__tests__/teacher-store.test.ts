@@ -438,6 +438,150 @@ describe("teacher workspace snapshot cache", () => {
     expect(assignmentQuery).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to memory when session status hydration times out", async () => {
+    delete process.env.DATABASE_URL;
+    const { addTeacherClassroom, addTeacherLearner, getTeacherWorkspaceSessionStatuses } =
+      await import("@/lib/server/teacher-store");
+    const ownerKey = "teacher_timeout_session";
+
+    const classroom = await addTeacherClassroom(ownerKey, {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    const learner = await addTeacherLearner(ownerKey, classroom.id, {
+      name: "Asha",
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    const fallbackWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    getPrismaMock.mockReturnValue({
+      teacherSchoolProfile: {
+        findUnique: vi.fn().mockResolvedValue({
+          schoolName: "Live School",
+          country: "Kenya",
+          appVersion: "4.1.0",
+          deviceId: "lb-live",
+          connectivityStatus: "OKAY",
+          contentStatus: "UP_TO_DATE",
+          supportEmail: "support@example.com",
+          schoolQrCode: "LIVE-QR",
+        }),
+      },
+      teacherClassroom: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: classroom.id,
+            name: classroom.name,
+            grade: classroom.grade,
+            teacherName: classroom.teacherName,
+            teacherPhone: classroom.teacherPhone,
+            cardColor: classroom.cardColor,
+            isArchived: false,
+            createdAt: new Date(classroom.createdAt),
+            updatedAt: new Date(classroom.updatedAt),
+          },
+        ]),
+      },
+      teacherLearner: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "learner-1",
+            classId: classroom.id,
+            userId: null,
+            name: "Asha",
+            avatarHue: 120,
+            weeklyMinutes: 15,
+            lastWeekMinutes: 12,
+            createdAt: new Date("2026-03-11T00:00:00.000Z"),
+          },
+        ]),
+      },
+      teacherSessionStatus: {
+        findMany: vi.fn().mockReturnValue(new Promise(() => {})),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+    });
+
+    const resultPromise = getTeacherWorkspaceSessionStatuses({
+      ownerKey,
+      classId: classroom.id,
+      activityId: "activity-sorting-grouping",
+    });
+
+    await vi.advanceTimersByTimeAsync(2_501);
+    const result = await resultPromise;
+
+    expect(result).toEqual({
+      sessionStatuses: { [learner.id]: "KEEP_GOING" },
+    });
+    expect(fallbackWarnSpy).toHaveBeenCalledWith(
+      "[teacher-store-fallback]",
+      expect.objectContaining({
+        event: "workspace-session-statuses",
+        ownerKey,
+        classId: classroom.id,
+      }),
+    );
+    fallbackWarnSpy.mockRestore();
+  });
+
+  it("falls back to memory when assignment hydration times out", async () => {
+    delete process.env.DATABASE_URL;
+    const { addTeacherClassroom, assignTeacherMissionToClass, getTeacherWorkspaceAssignments } =
+      await import("@/lib/server/teacher-store");
+    const ownerKey = "teacher_timeout_assignments";
+
+    const classroom = await addTeacherClassroom(ownerKey, {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    const seededAssignment = await assignTeacherMissionToClass({
+      ownerKey,
+      classId: classroom.id,
+      courseId: "course-logic",
+      courseTitle: "AI Pattern Detectives",
+      target: "CLASS",
+      subjectId: "subject-math",
+      strandId: "strand-pre-number",
+      activityId: "activity-sorting-grouping",
+      note: "Keep the class moving.",
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    const fallbackWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    getPrismaMock.mockReturnValue({
+      $queryRaw: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const resultPromise = getTeacherWorkspaceAssignments({
+      ownerKey,
+    });
+
+    await vi.advanceTimersByTimeAsync(2_501);
+    const result = await resultPromise;
+
+    expect(result.assignments.some((assignment) => assignment.id === seededAssignment.id)).toBe(true);
+    expect(result.assignmentAnalytics.totalAssignments).toBeGreaterThanOrEqual(1);
+    expect(fallbackWarnSpy).toHaveBeenCalledWith(
+      "[teacher-store-fallback]",
+      expect.objectContaining({
+        event: "workspace-assignments",
+        ownerKey,
+      }),
+    );
+    fallbackWarnSpy.mockRestore();
+  });
+
   it("falls back to memory quickly when learner creation stalls in Prisma", async () => {
     delete process.env.DATABASE_URL;
     const { addTeacherClassroom, addTeacherLearner } = await import(
@@ -468,6 +612,38 @@ describe("teacher workspace snapshot cache", () => {
     expect(learner.classId).toBe(classroom.id);
     expect(learner.name).toBe("Asha");
     expect(learner.id).toMatch(/^learner-/);
+  });
+
+  it("rejects linking a teacher account as a learner", async () => {
+    process.env.DATABASE_URL = "postgresql://local/test";
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
+          teacherClassroom: {
+            findFirst: vi.fn().mockResolvedValue({ id: "class-live" }),
+          },
+          user: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: "teacher-user",
+              role: "TEACHER",
+            }),
+          },
+          teacherLearner: {
+            create: vi.fn(),
+          },
+        }),
+      ),
+    });
+
+    const { addTeacherLearner } = await import("@/lib/server/teacher-store");
+
+    await expect(
+      addTeacherLearner("teacher_1", "class-live", {
+        name: "Asha",
+        userEmail: "teacher@example.com",
+      }),
+    ).rejects.toThrow("Only learner accounts can be linked to a classroom.");
   });
 
   it("falls back to memory quickly when learner session updates stall in Prisma", async () => {

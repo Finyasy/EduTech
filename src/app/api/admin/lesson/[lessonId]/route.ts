@@ -4,7 +4,11 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/server/prisma";
 import { requireAdmin } from "@/lib/server/auth";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
 import { normalizeYouTubeVideoId } from "@/lib/youtube";
 
 const updateLessonSchema = z.object({
@@ -64,27 +68,46 @@ export async function PATCH(
   }
 
   if (updateData.courseId) {
-    const course = await prisma.course.findUnique({
-      where: { id: updateData.courseId },
-      select: { id: true },
-    });
+    let course;
+    try {
+      course = await withRouteTimeout(
+        prisma.course.findUnique({
+          where: { id: updateData.courseId },
+          select: { id: true },
+        }),
+        "admin lesson target course lookup",
+      );
+    } catch (error) {
+      return toDatabaseFailureResponse(error, "admin-lesson-target-course-lookup");
+    }
     if (!course) {
       return NextResponse.json({ error: "Course not found" }, { status: 404 });
     }
   }
 
-  const existing = await prisma.lesson.findUnique({
-    where: { id: lessonId },
-  });
+  let existing;
+  try {
+    existing = await withRouteTimeout(
+      prisma.lesson.findUnique({
+        where: { id: lessonId },
+      }),
+      "admin lesson lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, "admin-lesson-lookup");
+  }
   if (!existing) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
   try {
-    const lesson = await prisma.lesson.update({
-      where: { id: lessonId },
-      data: updateData,
-    });
+    const lesson = await withRouteTimeout(
+      prisma.lesson.update({
+        where: { id: lessonId },
+        data: updateData,
+      }),
+      "admin lesson update",
+    );
 
     revalidateTag("courses", { expire: 0 });
     revalidateTag(`lesson:${lessonId}`, { expire: 0 });
@@ -106,7 +129,9 @@ export async function PATCH(
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: "Unable to update lesson." }, { status: 500 });
+    return error instanceof Prisma.PrismaClientKnownRequestError
+      ? NextResponse.json({ error: "Unable to update lesson." }, { status: 500 })
+      : toDatabaseFailureResponse(error, "admin-lesson-update");
   }
 }
 
@@ -131,19 +156,34 @@ export async function DELETE(
   }
 
   const { lessonId } = await params;
-  const existing = await prisma.lesson.findUnique({
-    where: { id: lessonId },
-  });
+  let existing;
+  try {
+    existing = await withRouteTimeout(
+      prisma.lesson.findUnique({
+        where: { id: lessonId },
+      }),
+      "admin lesson delete lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, "admin-lesson-delete-lookup");
+  }
   if (!existing) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  await prisma.$transaction([
-    prisma.quizAttempt.deleteMany({ where: { lessonId } }),
-    prisma.lessonProgress.deleteMany({ where: { lessonId } }),
-    prisma.quizQuestion.deleteMany({ where: { lessonId } }),
-    prisma.lesson.delete({ where: { id: lessonId } }),
-  ]);
+  try {
+    await withRouteTimeout(
+      prisma.$transaction([
+        prisma.quizAttempt.deleteMany({ where: { lessonId } }),
+        prisma.lessonProgress.deleteMany({ where: { lessonId } }),
+        prisma.quizQuestion.deleteMany({ where: { lessonId } }),
+        prisma.lesson.delete({ where: { id: lessonId } }),
+      ]),
+      "admin lesson delete",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, "admin-lesson-delete");
+  }
 
   revalidateTag("courses", { expire: 0 });
   revalidateTag(`lesson:${lessonId}`, { expire: 0 });

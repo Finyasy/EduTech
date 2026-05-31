@@ -56,7 +56,7 @@ export default function PostAuthRedirectClient({
       return signInHref;
     }
 
-    return requestedPath ?? "/dashboard";
+    return requestedPath ?? "/courses";
   }, [authState.status, isLoaded, requestedPath, signInHref, target, userId]);
   const destinationLabel = describeDestination(resolvedTarget ?? requestedPath ?? target);
 

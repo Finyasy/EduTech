@@ -4,7 +4,11 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/server/prisma";
 import { requireAdmin } from "@/lib/server/auth";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
 import { normalizeYouTubeVideoId } from "@/lib/youtube";
 
 const lessonSchema = z.object({
@@ -54,25 +58,36 @@ export async function POST(request: Request) {
     );
   }
 
-  const course = await prisma.course.findUnique({
-    where: { id: payload.data.courseId },
-    select: { id: true },
-  });
+  let course;
+  try {
+    course = await withRouteTimeout(
+      prisma.course.findUnique({
+        where: { id: payload.data.courseId },
+        select: { id: true },
+      }),
+      "admin lesson course lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, "admin-lesson-course-lookup");
+  }
   if (!course) {
     return NextResponse.json({ error: "Course not found" }, { status: 404 });
   }
 
   try {
-    const lesson = await prisma.lesson.create({
-      data: {
-        courseId: payload.data.courseId,
-        title: payload.data.title,
-        videoId: normalizedVideoId,
-        order: payload.data.order,
-        notes: payload.data.notes,
-        isPublished: payload.data.isPublished ?? false,
-      },
-    });
+    const lesson = await withRouteTimeout(
+      prisma.lesson.create({
+        data: {
+          courseId: payload.data.courseId,
+          title: payload.data.title,
+          videoId: normalizedVideoId,
+          order: payload.data.order,
+          notes: payload.data.notes,
+          isPublished: payload.data.isPublished ?? false,
+        },
+      }),
+      "admin lesson create",
+    );
 
     revalidateTag("courses", { expire: 0 });
     revalidateTag(`course:${payload.data.courseId}`, { expire: 0 });
@@ -89,6 +104,8 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: "Unable to create lesson." }, { status: 500 });
+    return error instanceof Prisma.PrismaClientKnownRequestError
+      ? NextResponse.json({ error: "Unable to create lesson." }, { status: 500 })
+      : toDatabaseFailureResponse(error, "admin-lesson-create");
   }
 }

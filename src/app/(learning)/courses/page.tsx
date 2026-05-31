@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
-import MissionArtwork from "@/components/shared/MissionArtwork";
+import LearnerPageHeader from "@/components/shared/LearnerPageHeader";
 import SiteHeader from "@/components/shared/SiteHeader";
 import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
 import {
@@ -220,25 +220,10 @@ export default async function CoursesPage() {
     return { ...section, items };
   }).filter((group) => group.items.length > 0);
 
-  const featuredTracks = groupedCourses
-    .map((group) => {
-      const course = group.items[0];
-      if (!course) return null;
-      return {
-        group,
-        course,
-        curriculumPlan: getCourseCurriculumPlan(course.id),
-      };
-    })
-    .filter(
-      (
-        item,
-      ): item is {
-        group: AgeBandSection & { items: CourseOverview[] };
-        course: CourseOverview;
-        curriculumPlan: ReturnType<typeof getCourseCurriculumPlan>;
-      } => Boolean(item),
-    );
+  const recommendedCourses = groupedCourses
+    .map((group) => group.items[0])
+    .filter((course): course is CourseOverview => Boolean(course))
+    .slice(0, 3);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -257,160 +242,98 @@ export default async function CoursesPage() {
           />
         )}
 
-        <header className="relative overflow-hidden rounded-[2.75rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] px-6 py-8 text-white shadow-skyline md:px-10 md:py-12">
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute -left-8 top-20 h-44 w-44 rounded-full bg-amber-300/18 blur-3xl" />
-            <div className="absolute right-12 top-8 h-56 w-56 rounded-full bg-sky-300/18 blur-3xl" />
-            <div className="absolute bottom-0 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-emerald-300/12 blur-3xl" />
-          </div>
-
-          <div className="relative grid gap-8 lg:grid-cols-[1.06fr_0.94fr] lg:items-start">
-            <div className="space-y-7">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-white/78">
-                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                  Learner mission library
-                </p>
-                <span className="rounded-full border border-cyan-200/18 bg-cyan-300/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100">
-                  AI + Coding + Maths
+        <LearnerPageHeader
+          eyebrow="Learner mission library"
+          title="Choose your next mission."
+          description="This library is private after sign-in. Pick an age path, resume a mission, or jump straight into the next AI, coding, and maths challenge."
+          badges={
+            <>
+              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-900">
+                AI + Coding + Maths
+              </span>
+              {showDelayedDataBadge && (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-900">
+                  Data may be delayed
                 </span>
-                {showDelayedDataBadge && (
-                  <span className="rounded-full border border-amber-200/25 bg-amber-300/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-100">
-                    Data may be delayed
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                <h1
-                  className="max-w-4xl text-4xl font-semibold leading-[1.03] md:text-6xl"
-                  style={{ fontFamily: "var(--font-display)" }}
+              )}
+            </>
+          }
+          actions={
+            <>
+              <a
+                href="#all-paths"
+                className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
+              >
+                Browse all paths
+              </a>
+              <a
+                href={`#${groupedCourses[0]?.anchorId ?? "all-paths"}`}
+                className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+              >
+                Start with recommended
+              </a>
+            </>
+          }
+          titleClassName="max-w-4xl text-3xl font-semibold leading-tight text-slate-950 md:text-4xl"
+        >
+          <div className="space-y-7">
+            <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-700">
+              {[
+                {
+                  value: String(courses.length),
+                  label: "missions",
+                },
+                {
+                  value: String(totalLessons),
+                  label: "lessons",
+                },
+                {
+                  value: String(stageCounts.Explorer ?? 0),
+                  label: "Explorer paths",
+                },
+                {
+                  value: String((stageCounts.Builder ?? 0) + (stageCounts.Creator ?? 0)),
+                  label: "Builder + Creator",
+                },
+              ].map((tile) => (
+                <span
+                  key={tile.label}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2"
                 >
-                  Pick an age path and launch a mission that feels premium from the first click.
-                </h1>
-                <p className="max-w-2xl text-base leading-7 text-white/72 md:text-lg">
-                  Faster choices, clearer sequencing, and a stronger studio feel for learners who
-                  need visible momentum in AI, coding, and mathematics.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href="#age-5-7"
-                  className="inline-flex min-h-12 items-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_16px_40px_rgba(255,255,255,0.18)] transition hover:-translate-y-0.5"
-                >
-                  Start with Explorer
-                </a>
-                <a
-                  href="#all-paths"
-                  className="inline-flex min-h-12 items-center rounded-full border border-white/16 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
-                >
-                  Browse all paths
-                </a>
-              </div>
-
-              <div className="flex flex-wrap gap-2 text-sm font-semibold text-white/84">
-                {[
-                  {
-                    value: String(courses.length),
-                    label: "missions",
-                  },
-                  {
-                    value: String(totalLessons),
-                    label: "lessons",
-                  },
-                  {
-                    value: String(stageCounts.Explorer ?? 0),
-                    label: "Explorer paths",
-                  },
-                  {
-                    value: String((stageCounts.Builder ?? 0) + (stageCounts.Creator ?? 0)),
-                    label: "Builder + Creator",
-                  },
-                ].map((tile) => (
-                  <span
-                    key={tile.label}
-                    className="rounded-full border border-white/12 bg-white/10 px-4 py-2"
-                  >
-                    {tile.value} {tile.label}
-                  </span>
-                ))}
-              </div>
+                  {tile.value} {tile.label}
+                </span>
+              ))}
             </div>
 
-            <div className="relative lg:pl-8">
-              <div className="glass-shell relative overflow-hidden rounded-[2rem] border border-white/12 p-5 shadow-[0_28px_80px_rgba(15,23,42,0.26)]">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[linear-gradient(135deg,rgba(252,211,77,0.18),rgba(125,211,252,0.16),transparent)]" />
-                <div className="relative space-y-5">
-                  <MissionArtwork
-                    className="h-52"
-                    imageClassName="object-[center_42%]"
-                    priority
-                  />
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
-                        Featured tracks
-                      </p>
-                      <h2
-                        className="mt-2 text-2xl font-semibold text-slate-950"
-                        style={{ fontFamily: "var(--font-display)" }}
-                      >
-                        Every age path gets a clear hero mission.
-                      </h2>
-                    </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {recommendedCourses.map((course) => (
+                <Link
+                  key={course.id}
+                  href={`/courses/${course.id}`}
+                  className="group rounded-[1.6rem] border border-slate-200 bg-slate-50/80 p-5 transition hover:-translate-y-0.5 hover:border-slate-300"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${stageChipClass(course.pathwayStage)}`}
+                    >
+                      {ageBandLabel(course.ageBand)}
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Open
+                    </span>
                   </div>
-
-                  <div className="grid gap-3">
-                    {featuredTracks.slice(0, 2).map(({ group, course, curriculumPlan }) => (
-                      <Link
-                        key={course.id}
-                        href={`/courses/${course.id}`}
-                        className="group block rounded-[1.5rem] border border-slate-200/80 bg-white/94 p-4 transition hover:-translate-y-0.5 hover:border-slate-300"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span
-                                className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${group.chipClass}`}
-                              >
-                                {group.label}
-                              </span>
-                              {curriculumPlan?.priority && (
-                                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
-                                  {curriculumPlan.priority}
-                                </span>
-                              )}
-                            </div>
-                            <h3
-                              className="mt-3 text-xl font-semibold text-slate-950"
-                              style={{ fontFamily: "var(--font-display)" }}
-                            >
-                              {course.title}
-                            </h3>
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
-                              {course.description}
-                            </p>
-                          </div>
-                          <span className="text-sm font-semibold text-slate-400 transition group-hover:text-slate-700">
-                            Open
-                          </span>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="absolute -bottom-5 right-4 hidden rounded-[1.5rem] border border-white/12 bg-emerald-300/10 px-5 py-4 text-white shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur-md md:block">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-100/72">
-                  Mission rhythm
-                </p>
-                <p className="mt-2 text-lg font-semibold text-white">Learn → Build → Share</p>
-              </div>
+                  <h2
+                    className="mt-4 text-2xl font-semibold text-slate-950"
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    {course.title}
+                  </h2>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{course.description}</p>
+                </Link>
+              ))}
             </div>
           </div>
-        </header>
+        </LearnerPageHeader>
 
         <section className="glass-shell rounded-[2.25rem] border border-white/70 p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -435,22 +358,22 @@ export default async function CoursesPage() {
               {
                 title: "Quick mastery loops",
                 body: "Short tasks with immediate feedback to build confidence before moving on.",
-                tone: "border-amber-100 bg-amber-50/88 text-amber-950",
+                tone: "border-amber-100 bg-amber-50/90 text-amber-950",
               },
               {
                 title: "Hands-on code labs",
                 body: "Project-first lessons where learners test, debug, and improve real artifacts.",
-                tone: "border-sky-100 bg-sky-50/88 text-sky-950",
+                tone: "border-sky-100 bg-sky-50/90 text-sky-950",
               },
               {
                 title: "AI app creation",
                 body: "Creator-stage pathways move from models to useful, presentable app ideas.",
-                tone: "border-emerald-100 bg-emerald-50/88 text-emerald-950",
+                tone: "border-emerald-100 bg-emerald-50/90 text-emerald-950",
               },
               {
                 title: "Portfolio reflection",
                 body: "Each mission closes with explain-your-thinking prompts for durable learning.",
-                tone: "border-fuchsia-100 bg-fuchsia-50/88 text-fuchsia-950",
+                tone: "border-fuchsia-100 bg-fuchsia-50/90 text-fuchsia-950",
               },
             ].map((card) => (
               <article key={card.title} className={`rounded-[1.5rem] border p-4 ${card.tone}`}>
@@ -475,7 +398,7 @@ export default async function CoursesPage() {
               <a
                 key={group.anchorId}
                 href={`#${group.anchorId}`}
-                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 bg-white/88 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-200"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-200"
               >
                 <span className={`rounded-full border px-3 py-1 text-xs ${group.chipClass}`}>
                   {group.label}
@@ -492,17 +415,17 @@ export default async function CoursesPage() {
               {
                 title: "Learn",
                 body: "Start with one idea, one example, and one success in the first lesson.",
-                tone: "border-amber-100 bg-amber-50/88 text-amber-900",
+                tone: "border-amber-100 bg-amber-50/90 text-amber-900",
               },
               {
                 title: "Build",
                 body: "Create something playful with code and maths, then test it immediately.",
-                tone: "border-sky-100 bg-sky-50/88 text-sky-900",
+                tone: "border-sky-100 bg-sky-50/90 text-sky-900",
               },
               {
                 title: "Share",
                 body: "Explain the result in learner-friendly language to lock in understanding.",
-                tone: "border-emerald-100 bg-emerald-50/88 text-emerald-900",
+                tone: "border-emerald-100 bg-emerald-50/90 text-emerald-900",
               },
             ].map((step) => (
               <div key={step.title} className={`rounded-[1.5rem] border p-4 text-sm ${step.tone}`}>
@@ -550,7 +473,7 @@ export default async function CoursesPage() {
                         .map((course) => (
                           <span
                             key={`${group.key}-${course.id}`}
-                            className="rounded-full border border-white/80 bg-white/88 px-3 py-1 text-slate-700 shadow-sm"
+                            className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-slate-700 shadow-sm"
                           >
                             {course.title}
                           </span>
@@ -626,7 +549,7 @@ export default async function CoursesPage() {
                             <p className="mt-2 text-sm leading-6 text-slate-600">{course.description}</p>
                           </div>
 
-                          <div className="rounded-[1.5rem] border border-slate-200/80 bg-slate-50/82 p-4">
+                          <div className="rounded-[1.5rem] border border-slate-200/80 bg-slate-50/80 p-4">
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                               Engagement note
                             </p>
@@ -645,7 +568,7 @@ export default async function CoursesPage() {
                           </div>
 
                           <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-[1.35rem] border border-emerald-100 bg-emerald-50/88 p-3 text-sm text-emerald-950">
+                            <div className="rounded-[1.35rem] border border-emerald-100 bg-emerald-50/90 p-3 text-sm text-emerald-950">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                                 AI
                               </p>
@@ -653,7 +576,7 @@ export default async function CoursesPage() {
                                 {course.aiFocus ?? "Age-appropriate AI concept"}
                               </p>
                             </div>
-                            <div className="rounded-[1.35rem] border border-sky-100 bg-sky-50/88 p-3 text-sm text-sky-950">
+                            <div className="rounded-[1.35rem] border border-sky-100 bg-sky-50/90 p-3 text-sm text-sky-950">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
                                 Coding
                               </p>
@@ -661,7 +584,7 @@ export default async function CoursesPage() {
                                 {course.codingFocus ?? "Core coding practice"}
                               </p>
                             </div>
-                            <div className="rounded-[1.35rem] border border-amber-100 bg-amber-50/88 p-3 text-sm text-amber-950">
+                            <div className="rounded-[1.35rem] border border-amber-100 bg-amber-50/90 p-3 text-sm text-amber-950">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
                                 Maths
                               </p>
