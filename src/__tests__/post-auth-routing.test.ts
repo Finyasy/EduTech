@@ -24,14 +24,14 @@ describe("isClerkPublishableKeyConfigured", () => {
 describe("getPostAuthRedirectTarget", () => {
   const validKey = "pk_test_123";
 
-  it("sends users to dashboard when Clerk is not configured", () => {
+  it("sends users to courses when Clerk is not configured", () => {
     expect(
       getPostAuthRedirectTarget({
         clerkPublishableKey: "pk_test_...",
         userId: null,
         userRole: null,
       }),
-    ).toBe("/dashboard");
+    ).toBe("/courses");
   });
 
   it("redirects unauthenticated users to sign-in with encoded post-auth redirect", () => {
@@ -53,14 +53,14 @@ describe("getPostAuthRedirectTarget", () => {
     ).toBe("/sign-in?redirect_url=%2Fpost-auth%3Fsource%3Dclerk");
   });
 
-  it("routes signed-in users without a resolved role to /dashboard by default", () => {
+  it("routes signed-in users without a resolved role to /courses by default", () => {
     expect(
       getPostAuthRedirectTarget({
         clerkPublishableKey: validKey,
         userId: "user_123",
         userRole: null,
       }),
-    ).toBe("/dashboard");
+    ).toBe("/courses");
   });
 
   it("routes admin and teacher users to /teach", () => {
@@ -81,14 +81,14 @@ describe("getPostAuthRedirectTarget", () => {
     ).toBe("/teach");
   });
 
-  it("routes students to /dashboard", () => {
+  it("routes students to /courses", () => {
     expect(
       getPostAuthRedirectTarget({
         clerkPublishableKey: validKey,
         userId: "user_student",
         userRole: "STUDENT",
       }),
-    ).toBe("/dashboard");
+    ).toBe("/courses");
   });
 
   it("honors a valid requested path for signed-in users", () => {

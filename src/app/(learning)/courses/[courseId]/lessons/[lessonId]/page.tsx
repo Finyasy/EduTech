@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import LearnerRouteAuthBridge from "@/components/auth/LearnerRouteAuthBridge";
+import LearnerPageHeader from "@/components/shared/LearnerPageHeader";
 import SiteHeader from "@/components/shared/SiteHeader";
-import MissionArtwork from "@/components/shared/MissionArtwork";
 import LessonArtifactPanel from "@/components/learning/LessonArtifactPanel";
 import LessonProgressPanel from "@/components/learning/LessonProgressPanel";
 import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
@@ -74,9 +74,6 @@ export default async function LessonPage({ params }: LessonPageProps) {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_14%_12%,rgba(252,211,77,0.24),transparent_20%),radial-gradient(circle_at_84%_8%,rgba(125,211,252,0.2),transparent_22%),linear-gradient(180deg,#091a41_0%,#112b60_32%,transparent_82%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-24 h-[34rem] grid-orbit opacity-30" />
-
       <SiteHeader withAuth={false} />
 
       <main className="mx-auto w-full max-w-7xl px-6 pb-20 pt-8 md:px-8">
@@ -91,55 +88,46 @@ export default async function LessonPage({ params }: LessonPageProps) {
           </div>
         )}
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <Link
-            href="/courses"
-            className="inline-flex min-h-11 items-center rounded-full border border-white/70 bg-white/78 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm backdrop-blur transition hover:border-slate-200 hover:text-slate-950"
+        <div className="mb-6">
+          <LearnerPageHeader
+            eyebrow={course.title}
+            title={`${lesson.order}. ${lesson.title}`}
+            description={course.description}
+            badges={
+              <>
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-900">
+                  {lessonPhase}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+                  {ageBand}
+                </span>
+              </>
+            }
+            actions={
+              <Link
+                href="/courses"
+                className="inline-flex min-h-11 items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
+              >
+                ← All courses
+              </Link>
+            }
           >
-            ← All courses
-          </Link>
-          <span className="rounded-full border border-white/70 bg-white/78 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm backdrop-blur">
-            {ageBand}
-          </span>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em]">
+              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-600">
+                10-15 min learn
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-600">
+                15-20 min build
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-600">
+                5 min reflection
+              </span>
+            </div>
+          </LearnerPageHeader>
         </div>
 
         <section className="grid gap-8 xl:grid-cols-[1.8fr_1fr]">
           <div className="space-y-8">
-            <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] p-6 text-white shadow-skyline md:p-8">
-              <div className="pointer-events-none absolute inset-0">
-                <div className="absolute -left-8 top-12 h-40 w-40 rounded-full bg-amber-300/16 blur-3xl" />
-                <div className="absolute right-10 top-10 h-44 w-44 rounded-full bg-sky-300/14 blur-3xl" />
-              </div>
-              <div className="relative space-y-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/62">
-                  {course.title}
-                </p>
-                <h1
-                  className="max-w-4xl text-3xl font-semibold leading-tight md:text-5xl"
-                  style={{ fontFamily: "var(--font-display)" }}
-                >
-                  {lesson.order}. {lesson.title}
-                </h1>
-                <p className="max-w-3xl text-sm leading-7 text-white/72 md:text-base">
-                  {course.description}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em]">
-                  <span className="rounded-full border border-emerald-200/20 bg-emerald-300/10 px-4 py-2 text-emerald-100">
-                    {lessonPhase}
-                  </span>
-                  <span className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-white/72">
-                    10-15 min learn
-                  </span>
-                  <span className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-white/72">
-                    15-20 min build
-                  </span>
-                  <span className="rounded-full border border-white/12 bg-white/8 px-4 py-2 text-white/72">
-                    5 min reflection
-                  </span>
-                </div>
-              </div>
-            </div>
-
             <div className="glass-shell overflow-hidden rounded-[2.25rem] border border-white/70 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
               <div className="aspect-video w-full bg-slate-950">
                 {videoEmbedUrl ? (
@@ -202,19 +190,19 @@ export default async function LessonPage({ params }: LessonPageProps) {
                 </span>
               </div>
               <ul className="mt-5 grid gap-3 md:grid-cols-3 text-sm text-slate-700">
-                <li className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/88 px-4 py-4">
+                <li className="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/90 px-4 py-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
                     1. Watch
                   </p>
                   <p className="mt-2 leading-6">Watch the concept demo and identify one AI idea.</p>
                 </li>
-                <li className="rounded-[1.5rem] border border-sky-100 bg-sky-50/88 px-4 py-4">
+                <li className="rounded-[1.5rem] border border-sky-100 bg-sky-50/90 px-4 py-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">
                     2. Build
                   </p>
                   <p className="mt-2 leading-6">Build or edit code using block logic or Python.</p>
                 </li>
-                <li className="rounded-[1.5rem] border border-amber-100 bg-amber-50/88 px-4 py-4">
+                <li className="rounded-[1.5rem] border border-amber-100 bg-amber-50/90 px-4 py-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">
                     3. Explain
                   </p>
@@ -227,12 +215,6 @@ export default async function LessonPage({ params }: LessonPageProps) {
           </div>
 
           <aside className="space-y-6">
-            <MissionArtwork
-              className="h-56"
-              imageClassName="object-[center_42%]"
-              label={`${lesson.title} learning studio`}
-              priority
-            />
             <LessonProgressPanel lessonId={lesson.id} clerkEnabled={isClerkConfigured} />
             <LessonArtifactPanel lessonId={lesson.id} clerkEnabled={isClerkConfigured} />
 
@@ -254,8 +236,8 @@ export default async function LessonPage({ params }: LessonPageProps) {
                     key={prompt}
                     className={`rounded-[1.15rem] border px-3 py-3 ${
                       index % 2 === 0
-                        ? "border-sky-100 bg-sky-50/88"
-                        : "border-emerald-100 bg-emerald-50/88"
+                        ? "border-sky-100 bg-sky-50/90"
+                        : "border-emerald-100 bg-emerald-50/90"
                     }`}
                   >
                     {prompt}
@@ -276,7 +258,7 @@ export default async function LessonPage({ params }: LessonPageProps) {
                       className={`flex min-h-12 items-center justify-between rounded-[1.25rem] border px-4 py-3 transition ${
                         item.id === lesson.id
                           ? "border-slate-900/10 bg-slate-950 text-white shadow-[0_16px_36px_rgba(15,23,42,0.18)]"
-                          : "border-white/80 bg-white/88 hover:border-slate-200"
+                          : "border-white/80 bg-white/90 hover:border-slate-200"
                       }`}
                     >
                       <span>
@@ -294,22 +276,22 @@ export default async function LessonPage({ params }: LessonPageProps) {
             </div>
 
             {nextLesson && (
-              <div className="rounded-[2.1rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_34%,#14346f_100%)] p-6 text-white shadow-skyline">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/52">
+              <div className="glass-shell rounded-[2.1rem] border border-white/70 p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Up next
                 </p>
                 <p
-                  className="mt-3 text-2xl font-semibold text-white"
+                  className="mt-3 text-2xl font-semibold text-slate-950"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
                   {nextLesson.title}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-white/68">
+                <p className="mt-2 text-sm leading-6 text-slate-600">
                   Keep the momentum going while the context is still fresh.
                 </p>
                 <Link
                   href={`/courses/${course.id}/lessons/${nextLesson.id}`}
-                  className="mt-5 inline-flex min-h-11 items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
+                  className="mt-5 inline-flex min-h-11 items-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-900"
                 >
                   Start next lesson
                 </Link>
