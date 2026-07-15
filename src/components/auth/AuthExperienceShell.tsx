@@ -41,7 +41,7 @@ export default function AuthExperienceShell({
               </Link>
               <Link
                 href={alternateHref ?? (isSignIn ? "/sign-up" : "/sign-in")}
-                className="text-sm font-semibold text-white/86 transition hover:text-white"
+                className="text-sm font-semibold text-white/90 transition hover:text-white"
               >
                 {isSignIn ? "Need an account?" : "Already registered?"}
               </Link>
@@ -64,7 +64,7 @@ export default function AuthExperienceShell({
               >
                 {title}
               </h1>
-              <p className="max-w-xl text-sm leading-7 text-white/86 md:text-base">
+              <p className="max-w-xl text-sm leading-7 text-white/90 md:text-base">
                 {description}
               </p>
             </div>
@@ -85,7 +85,7 @@ export default function AuthExperienceShell({
             </div>
           </section>
 
-          <section className="rounded-[2.4rem] border border-white/80 bg-white/96 p-4 shadow-[0_24px_64px_rgba(15,23,42,0.12)] md:p-6">
+          <section className="rounded-[2.4rem] border border-white/80 bg-white/95 p-4 shadow-[0_24px_64px_rgba(15,23,42,0.12)] md:p-6">
             <div className="rounded-[2rem] border border-slate-100 bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] md:p-5">
               {children}
             </div>

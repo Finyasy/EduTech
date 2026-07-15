@@ -23,6 +23,144 @@ type BestStats = {
 };
 
 const getBestKey = (gameId: string) => `edutech.game.${gameId}.best`;
+const PP1_COUNT_GAME_ID = "game-pp1-count-sets";
+
+type PP1CountObjectKind = "cup" | "bottleTop" | "stick" | "tin" | "seed";
+
+const PP1_COUNT_OBJECTS: Record<
+  string,
+  { label: string; singular: string; kind: PP1CountObjectKind }
+> = {
+  "level-pp1-count-5": {
+    label: "cups",
+    singular: "cup",
+    kind: "cup",
+  },
+  "level-pp1-count-6": {
+    label: "bottle tops",
+    singular: "top",
+    kind: "bottleTop",
+  },
+  "level-pp1-count-7": {
+    label: "sticks",
+    singular: "stick",
+    kind: "stick",
+  },
+  "level-pp1-count-8": {
+    label: "tins",
+    singular: "tin",
+    kind: "tin",
+  },
+  "level-pp1-count-9": {
+    label: "seeds",
+    singular: "seed",
+    kind: "seed",
+  },
+};
+
+function parseCount(answer: string) {
+  const count = Number(answer);
+  return Number.isFinite(count) && count > 0 ? count : null;
+}
+
+function PP1ObjectSet({
+  count,
+  levelId,
+}: {
+  count: number;
+  levelId: string;
+}) {
+  const object = PP1_COUNT_OBJECTS[levelId] ?? {
+    label: "objects",
+    singular: "item",
+    kind: "cup" as const,
+  };
+
+  return (
+    <div className="rounded-[2rem] border border-amber-100 bg-amber-50/70 p-4 md:p-5">
+      <p className="text-center text-sm font-semibold text-amber-950">
+        Count the {object.label}.
+      </p>
+      <div
+        className="mx-auto mt-4 grid max-w-xl grid-cols-3 gap-3 sm:grid-cols-5"
+        aria-label={`${count} ${object.label}`}
+      >
+        {Array.from({ length: count }).map((_, index) => (
+          <div
+            key={`${levelId}-${index}`}
+            className="flex aspect-square min-h-16 items-center justify-center rounded-[1.25rem] border border-white bg-white/80 p-2 shadow-sm"
+          >
+            <PP1ObjectVisual kind={object.kind} label={object.singular} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PP1ObjectVisual({
+  kind,
+  label,
+}: {
+  kind: PP1CountObjectKind;
+  label: string;
+}) {
+  if (kind === "cup") {
+    return (
+      <span
+        className="relative block h-10 w-10 rounded-b-xl border-2 border-amber-500 bg-amber-100 shadow-inner"
+        aria-label={label}
+        role="img"
+      >
+        <span className="absolute -right-2 top-3 h-4 w-3 rounded-r-full border-2 border-l-0 border-amber-500" />
+        <span className="absolute left-1/2 top-1 h-1 w-7 -translate-x-1/2 rounded-full bg-white/70" />
+      </span>
+    );
+  }
+
+  if (kind === "bottleTop") {
+    return (
+      <span
+        className="grid h-11 w-11 place-items-center rounded-full border-4 border-emerald-500 bg-emerald-100 shadow-inner"
+        aria-label={label}
+        role="img"
+      >
+        <span className="h-5 w-5 rounded-full border-2 border-emerald-600 bg-emerald-200" />
+      </span>
+    );
+  }
+
+  if (kind === "stick") {
+    return (
+      <span
+        className="block h-12 w-3 rotate-12 rounded-full border border-amber-700 bg-amber-500 shadow-sm"
+        aria-label={label}
+        role="img"
+      />
+    );
+  }
+
+  if (kind === "tin") {
+    return (
+      <span
+        className="relative block h-12 w-10 rounded-b-lg border-2 border-slate-500 bg-slate-100 shadow-inner"
+        aria-label={label}
+        role="img"
+      >
+        <span className="absolute -top-1 left-1/2 h-3 w-10 -translate-x-1/2 rounded-full border-2 border-slate-500 bg-slate-200" />
+        <span className="absolute bottom-2 left-1/2 h-1 w-7 -translate-x-1/2 rounded-full bg-white" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="block h-9 w-6 rotate-45 rounded-[999px_0_999px_999px] border-2 border-lime-700 bg-lime-200 shadow-inner"
+      aria-label={label}
+      role="img"
+    />
+  );
+}
 
 function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   const choiceGridRef = useRef<HTMLDivElement | null>(null);
@@ -45,6 +183,8 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   const choices = level?.configJson?.choices ?? [];
   const answer = level?.configJson?.answer ?? "";
   const prompt = level?.configJson?.prompt ?? "Choose the correct answer.";
+  const answerCount = parseCount(answer);
+  const isPp1CountingGame = gameId === PP1_COUNT_GAME_ID && answerCount !== null;
   const hasValidConfig =
     Boolean(prompt?.trim()) &&
     Array.isArray(choices) &&
@@ -228,34 +368,38 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   // Game complete screen (finished last level, correct or wrong)
   if (isGameComplete) {
     return (
-      <div className="rounded-[2.3rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_34%,#14346f_100%)] p-8 text-center text-white shadow-skyline">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/56">
-          Game complete
+      <div className="rounded-[2.3rem] border border-white/70 bg-white/95 p-6 text-center shadow-[0_20px_56px_rgba(15,23,42,0.08)] md:p-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+          {isPp1CountingGame ? "Counting practice complete" : "Game complete"}
         </p>
         <h2
-          className="mt-4 text-3xl font-semibold text-white"
+          className="mt-4 text-3xl font-semibold text-slate-950"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Score: {score} / {levels.length}
+          {score} of {levels.length} correct
         </h2>
-        <p className="mt-2 text-white/72">
+        <p className="mt-2 text-sm font-semibold text-slate-600">
           Total time: {(totalTimeMs / 1000).toFixed(1)}s
         </p>
         {bestStats && (
-          <p className="mt-2 text-sm text-white/68">
-            Best: {bestStats.bestScore} / {levels.length} ·{" "}
+          <p className="mt-2 text-sm text-slate-500">
+            Best: {bestStats.bestScore} of {levels.length} ·{" "}
             {(bestStats.bestTimeMs / 1000).toFixed(1)}s
           </p>
         )}
         {feedback === "wrong" && (
-          <p className="mt-2 text-sm text-rose-700">
-            Last level: correct answer was {level.configJson.answer}
+          <p className="mx-auto mt-4 max-w-md rounded-[1.25rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+            Last set matched number {level.configJson.answer}.
           </p>
         )}
-        <p className="mt-4 text-sm text-white/72">
-          {score === levels.length
-            ? "Perfect! You got them all."
-            : "Nice try! Play again to improve."}
+        <p className="mx-auto mt-4 max-w-lg text-sm leading-6 text-slate-600">
+          {isPp1CountingGame
+            ? score === levels.length
+              ? "You counted every set and matched each number."
+              : "Try again. Count each object once, then choose the number."
+            : score === levels.length
+              ? "Perfect! You got them all."
+              : "Nice try! Play again to improve."}
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button
@@ -268,16 +412,34 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
               setTotalTimeMs(0);
               setLevelStartTime(Date.now());
             }}
-            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
+            className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
           >
             Play again
           </button>
-          <Link
-            href="/games"
-            className="rounded-full border border-white/14 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
-          >
-            Back to games
-          </Link>
+          {isPp1CountingGame && (
+            <Link
+              href="/courses/course-math#pp1-week-1"
+              className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+            >
+              Return to maths roadmap
+            </Link>
+          )}
+          {isPp1CountingGame ? (
+            <button
+              type="button"
+              disabled
+              className="inline-flex min-h-12 cursor-not-allowed items-center rounded-full border border-amber-200 bg-amber-50 px-6 py-3 text-sm font-semibold text-amber-950 opacity-80"
+            >
+              Next maths activity soon
+            </button>
+          ) : (
+            <Link
+              href="/games"
+              className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+            >
+              Back to games
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -286,9 +448,12 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   // Wrong answer, not last level – show Next to continue
   if (feedback === "wrong" && !isLastLevel) {
     return (
-      <div className="glass-shell rounded-[2.2rem] border border-rose-200 bg-rose-50/78 p-8 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
-        <p className="text-center font-semibold text-rose-800">
-          Not quite! The correct answer was: {level.configJson.answer}
+      <div className="rounded-[2.2rem] border border-rose-200 bg-rose-50 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)] md:p-8">
+        <p className="text-center text-2xl font-semibold text-rose-950">
+          Try again if you missed one.
+        </p>
+        <p className="mx-auto mt-2 max-w-md text-center text-sm font-semibold leading-6 text-rose-800">
+          Count each object once. The matching number is {level.configJson.answer}.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <button
@@ -298,7 +463,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
               setSelectedChoice(null);
               setLevelStartTime(Date.now());
             }}
-            className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+            className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
           >
             Try again
           </button>
@@ -306,9 +471,9 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
             type="button"
             onClick={handleNext}
             disabled={isSubmitting}
-            className="rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900 disabled:opacity-50"
+            className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:opacity-50"
           >
-            Next level
+            Next set
           </button>
         </div>
       </div>
@@ -334,16 +499,41 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
   }
 
   return (
-    <div className="glass-shell rounded-[2.35rem] border border-white/70 p-8 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-        Level {currentIndex + 1} of {levels.length}
-      </p>
-      <p
-        className="mt-4 text-2xl font-semibold text-slate-950"
-        style={{ fontFamily: "var(--font-display)" }}
-      >
-        {prompt}
-      </p>
+    <div className="rounded-[2.35rem] border border-white/70 bg-white/95 p-5 shadow-[0_20px_56px_rgba(15,23,42,0.08)] md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+          Set {currentIndex + 1} of {levels.length}
+        </p>
+        {isPp1CountingGame && (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-900">
+            Count 5-9
+          </span>
+        )}
+      </div>
+      {isPp1CountingGame && answerCount ? (
+        <div className="mt-5">
+          <PP1ObjectSet count={answerCount} levelId={level.id} />
+          <h2
+            className="mt-5 text-center text-3xl font-semibold leading-tight text-slate-950 md:text-4xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            {prompt}
+          </h2>
+          <h2
+            className="mt-2 text-center text-2xl font-semibold leading-tight text-slate-700 md:text-3xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Choose the matching number.
+          </h2>
+        </div>
+      ) : (
+        <p
+          className="mt-4 text-2xl font-semibold text-slate-950"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          {prompt}
+        </p>
+      )}
       {!isSignedIn && (
         <div className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
           Sign in to save attempts
@@ -361,7 +551,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
         </p>
       )}
       <div
-        className="mt-6 grid gap-3 sm:grid-cols-2"
+        className={`mt-6 grid gap-3 ${isPp1CountingGame ? "grid-cols-3" : "sm:grid-cols-2"}`}
         tabIndex={0}
         onKeyDown={(event) => {
           if (feedback !== null) return;
@@ -395,7 +585,7 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
               disabled={feedback !== null}
               role="radio"
               aria-checked={isSelected}
-              className={`rounded-[1.4rem] border px-5 py-4 text-left text-sm font-medium transition ${
+              className={`rounded-[1.4rem] border px-5 py-4 font-semibold transition ${
                 feedback !== null
                   ? "cursor-default border-slate-100 bg-slate-50"
                   : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
@@ -407,11 +597,13 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
                     : feedback === "correct" && isCorrect
                       ? "border-emerald-200 bg-emerald-50/80 text-emerald-800"
                       : "text-slate-800"
-              }`}
+              } ${isPp1CountingGame ? "min-h-20 text-center text-4xl" : "text-left text-sm"}`}
             >
-              <span className="mr-2 text-xs font-semibold text-slate-400">
-                {index + 1}.
-              </span>
+              {!isPp1CountingGame && (
+                <span className="mr-2 text-xs font-semibold text-slate-400">
+                  {index + 1}.
+                </span>
+              )}
               {choice}
               {showCorrect && " ✓"}
               {showWrong && " ✗"}
@@ -420,8 +612,8 @@ function GameSession({ gameId, levels, isSignedIn }: GameSessionProps) {
         })}
       </div>
       {feedback === "correct" && !isLastLevel && (
-        <p className="mt-4 text-center text-sm font-semibold text-emerald-700">
-          Correct! Next level...
+        <p className="mt-4 text-center text-lg font-semibold text-emerald-700">
+          Correct. Next set...
         </p>
       )}
       <p className="sr-only" aria-live="polite">

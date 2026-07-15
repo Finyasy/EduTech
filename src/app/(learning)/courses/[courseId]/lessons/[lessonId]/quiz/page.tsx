@@ -51,7 +51,7 @@ export default async function QuizPage({ params }: QuizPageProps) {
               >
                 {lesson.title}
               </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/84">
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/90">
                 Answer every question, then submit once. Your score is saved when your learner
                 session is active.
               </p>

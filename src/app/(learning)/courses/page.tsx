@@ -36,6 +36,17 @@ type BlendRow = {
   textClass: string;
 };
 
+type SubjectKey = BlendRow["key"];
+
+type SubjectHubCard = {
+  key: SubjectKey;
+  label: string;
+  title: string;
+  body: string;
+  accentClass: string;
+  badgeClass: string;
+};
+
 const AGE_BAND_SECTIONS: AgeBandSection[] = [
   {
     key: "5-7",
@@ -110,6 +121,33 @@ const SUBJECT_TONES: Record<BlendRow["key"], Pick<BlendRow, "barClass" | "textCl
   },
 };
 
+const SUBJECT_HUB_CARDS: SubjectHubCard[] = [
+  {
+    key: "math",
+    label: "Mathematics",
+    title: "Roadmaps, counting, number work, and practical maths.",
+    body: "Start with the Kenya CBC/CBE maths roadmap and move into PP1 counting before expanding upward.",
+    accentClass: "from-amber-100 via-yellow-50 to-white",
+    badgeClass: "border-amber-200 bg-amber-50 text-amber-900",
+  },
+  {
+    key: "ai",
+    label: "Artificial Intelligence",
+    title: "Pattern thinking, model ideas, and guided AI concepts.",
+    body: "Open learner-friendly AI paths that focus on observing patterns, classification, and simple reasoning.",
+    accentClass: "from-emerald-100 via-lime-50 to-white",
+    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  },
+  {
+    key: "coding",
+    label: "Coding",
+    title: "Loops, logic, debugging, and build-first code practice.",
+    body: "Browse coding paths that turn ideas into small interactive builds with visible progress.",
+    accentClass: "from-sky-100 via-cyan-50 to-white",
+    badgeClass: "border-sky-200 bg-sky-50 text-sky-900",
+  },
+];
+
 function getAgeBandKey(ageBand?: string): AgeBandKey {
   if (ageBand === "5-7" || ageBand === "8-10" || ageBand === "11-14") {
     return ageBand;
@@ -161,6 +199,11 @@ function ageBandLabel(ageBand?: string) {
   return `Ages ${ageBand}`;
 }
 
+function courseLevelLabel(course: CourseOverview) {
+  if (course.id === "course-math") return course.gradeLevel;
+  return ageBandLabel(course.ageBand);
+}
+
 function blendRows(courseId: string): BlendRow[] {
   const blend = getCourseCurriculumPlan(courseId)?.themeBlend ?? {
     ai: 34,
@@ -187,6 +230,15 @@ function groupSummary(group: AgeBandSection) {
     return "Best for creator energy, demos, and evidence-backed AI projects.";
   }
   return "Flexible for mixed-age clubs, intervention groups, and blended sessions.";
+}
+
+function courseBlendValue(courseId: string, subject: SubjectKey) {
+  const blend = getCourseCurriculumPlan(courseId)?.themeBlend ?? {
+    ai: 34,
+    coding: 33,
+    math: 33,
+  };
+  return blend[subject];
 }
 
 export default async function CoursesPage() {
@@ -225,6 +277,29 @@ export default async function CoursesPage() {
     .filter((course): course is CourseOverview => Boolean(course))
     .slice(0, 3);
 
+  const subjectFeaturedCourses = SUBJECT_HUB_CARDS.map((subject) => {
+    const featured =
+      subject.key === "math"
+        ? courses.find((course) => course.id === "course-math") ??
+          [...courses].sort(
+            (left, right) =>
+              courseBlendValue(right.id, subject.key) - courseBlendValue(left.id, subject.key),
+          )[0]
+        : [...courses]
+            .filter((course) => course.id !== "course-math")
+            .sort((left, right) => {
+              const blendDiff =
+                courseBlendValue(right.id, subject.key) - courseBlendValue(left.id, subject.key);
+              if (blendDiff !== 0) return blendDiff;
+              return right.lessonCount - left.lessonCount;
+            })[0];
+
+    return {
+      subject,
+      featured: featured ?? null,
+    };
+  });
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[34rem] bg-[radial-gradient(circle_at_15%_14%,rgba(252,211,77,0.28),transparent_20%),radial-gradient(circle_at_82%_8%,rgba(125,211,252,0.2),transparent_22%),linear-gradient(180deg,#091a41_0%,#112b60_36%,transparent_80%)]" />
@@ -243,9 +318,9 @@ export default async function CoursesPage() {
         )}
 
         <LearnerPageHeader
-          eyebrow="Learner mission library"
-          title="Choose your next mission."
-          description="This library is private after sign-in. Pick an age path, resume a mission, or jump straight into the next AI, coding, and maths challenge."
+          eyebrow="Learner subject hub"
+          title="Choose a subject to continue."
+          description="Start with Mathematics, Artificial Intelligence, or Coding. Each subject opens into its own learner path instead of one mixed mission catalog."
           badges={
             <>
               <span className="rounded-full border border-cyan-200 bg-cyan-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-900">
@@ -261,16 +336,16 @@ export default async function CoursesPage() {
           actions={
             <>
               <a
-                href="#all-paths"
+                href="#subjects"
                 className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
               >
-                Browse all paths
+                Browse subjects
               </a>
               <a
-                href={`#${groupedCourses[0]?.anchorId ?? "all-paths"}`}
+                href="#all-paths"
                 className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
               >
-                Start with recommended
+                Browse by age
               </a>
             </>
           }
@@ -280,20 +355,20 @@ export default async function CoursesPage() {
             <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-700">
               {[
                 {
-                  value: String(courses.length),
-                  label: "missions",
+                  value: "3",
+                  label: "subjects",
                 },
                 {
                   value: String(totalLessons),
                   label: "lessons",
                 },
                 {
-                  value: String(stageCounts.Explorer ?? 0),
-                  label: "Explorer paths",
+                  value: String(courses.length),
+                  label: "course paths",
                 },
                 {
-                  value: String((stageCounts.Builder ?? 0) + (stageCounts.Creator ?? 0)),
-                  label: "Builder + Creator",
+                  value: String((stageCounts.Explorer ?? 0) + (stageCounts.Builder ?? 0) + (stageCounts.Creator ?? 0)),
+                  label: "guided stages",
                 },
               ].map((tile) => (
                 <span
@@ -305,32 +380,63 @@ export default async function CoursesPage() {
               ))}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              {recommendedCourses.map((course) => (
-                <Link
-                  key={course.id}
-                  href={`/courses/${course.id}`}
-                  className="group rounded-[1.6rem] border border-slate-200 bg-slate-50/80 p-5 transition hover:-translate-y-0.5 hover:border-slate-300"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${stageChipClass(course.pathwayStage)}`}
-                    >
-                      {ageBandLabel(course.ageBand)}
-                    </span>
-                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Open
-                    </span>
-                  </div>
-                  <h2
-                    className="mt-4 text-2xl font-semibold text-slate-950"
-                    style={{ fontFamily: "var(--font-display)" }}
+            <div id="subjects" className="grid gap-4 lg:grid-cols-3">
+              {subjectFeaturedCourses.map(({ subject, featured }) => {
+                const href =
+                  subject.key === "math"
+                    ? "/courses/course-math"
+                    : featured
+                      ? `/courses/${featured.id}`
+                      : "/courses";
+
+                return (
+                  <Link
+                    key={subject.key}
+                    href={href}
+                    className={`group rounded-[1.8rem] border border-slate-200 bg-gradient-to-br ${subject.accentClass} p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-slate-300`}
                   >
-                    {course.title}
-                  </h2>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">{course.description}</p>
-                </Link>
-              ))}
+                    <div className="flex items-center justify-between gap-3">
+                      <span
+                        className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${subject.badgeClass}`}
+                      >
+                        {subject.label}
+                      </span>
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Open
+                      </span>
+                    </div>
+                    <h2
+                      className="mt-4 text-3xl font-semibold text-slate-950"
+                      style={{ fontFamily: "var(--font-display)" }}
+                    >
+                      {subject.label}
+                    </h2>
+                    <p className="mt-3 text-sm leading-6 text-slate-700">{subject.title}</p>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">{subject.body}</p>
+                    {featured ? (
+                      <div className="mt-5 rounded-[1.35rem] border border-white/80 bg-white/80 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          Start here
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-950">
+                          {featured.title}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {subject.key === "math"
+                            ? "Open the maths roadmap first."
+                            : `${featured.lessonCount} lessons in the current highlighted path.`}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-5 rounded-[1.35rem] border border-white/80 bg-white/80 p-4">
+                        <p className="text-sm font-semibold text-slate-700">
+                          Subject path will appear here when content is ready.
+                        </p>
+                      </div>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </LearnerPageHeader>
@@ -339,41 +445,36 @@ export default async function CoursesPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-                Curriculum architecture
+                Subject model
               </p>
               <h2
                 className="mt-2 text-2xl font-semibold text-slate-950"
                 style={{ fontFamily: "var(--font-display)" }}
               >
-                Benchmark-informed structure, simplified for young learner momentum.
+                Start with one subject, then move deeper into its learner paths.
               </h2>
             </div>
             <span className="rounded-full border border-cyan-200 bg-cyan-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-900">
-              Built for clarity
+              Subject-first
             </span>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-3">
             {[
               {
-                title: "Quick mastery loops",
-                body: "Short tasks with immediate feedback to build confidence before moving on.",
+                title: "Mathematics",
+                body: "Roadmaps, practical tasks, and games that support clear competency progress.",
                 tone: "border-amber-100 bg-amber-50/90 text-amber-950",
               },
               {
-                title: "Hands-on code labs",
-                body: "Project-first lessons where learners test, debug, and improve real artifacts.",
+                title: "Artificial Intelligence",
+                body: "Pattern spotting, classification ideas, and model thinking in learner-friendly form.",
                 tone: "border-sky-100 bg-sky-50/90 text-sky-950",
               },
               {
-                title: "AI app creation",
-                body: "Creator-stage pathways move from models to useful, presentable app ideas.",
+                title: "Coding",
+                body: "Logic, loops, debugging, and build-first practice that turns ideas into working projects.",
                 tone: "border-emerald-100 bg-emerald-50/90 text-emerald-950",
-              },
-              {
-                title: "Portfolio reflection",
-                body: "Each mission closes with explain-your-thinking prompts for durable learning.",
-                tone: "border-fuchsia-100 bg-fuchsia-50/90 text-fuchsia-950",
               },
             ].map((card) => (
               <article key={card.title} className={`rounded-[1.5rem] border p-4 ${card.tone}`}>
@@ -385,6 +486,50 @@ export default async function CoursesPage() {
                 </h3>
                 <p className="mt-2 text-sm leading-6">{card.body}</p>
               </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Featured starts
+              </p>
+              <h2
+                className="mt-2 text-2xl font-semibold text-slate-950"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Jump straight into one highlighted path from each subject.
+              </h2>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {recommendedCourses.map((course) => (
+              <Link
+                key={course.id}
+                href={`/courses/${course.id}`}
+                className="group rounded-[1.6rem] border border-slate-200 bg-slate-50/80 p-5 transition hover:-translate-y-0.5 hover:border-slate-300"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span
+                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${stageChipClass(course.pathwayStage)}`}
+                  >
+                    {courseLevelLabel(course)}
+                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Open
+                  </span>
+                </div>
+                <h2
+                  className="mt-4 text-2xl font-semibold text-slate-950"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  {course.title}
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{course.description}</p>
+              </Link>
             ))}
           </div>
         </section>
@@ -525,7 +670,7 @@ export default async function CoursesPage() {
                                 {stage}
                               </span>
                               <span className="rounded-full border border-white/80 bg-white px-3 py-1 text-slate-700">
-                                {ageBandLabel(course.ageBand)}
+                                {courseLevelLabel(course)}
                               </span>
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">
                                 {course.lessonCount} lessons
@@ -567,59 +712,107 @@ export default async function CoursesPage() {
                             </div>
                           </div>
 
-                          <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-[1.35rem] border border-emerald-100 bg-emerald-50/90 p-3 text-sm text-emerald-950">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                                AI
-                              </p>
-                              <p className="mt-1 font-semibold">
-                                {course.aiFocus ?? "Age-appropriate AI concept"}
-                              </p>
+                          {course.id === "course-math" ? (
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="rounded-[1.35rem] border border-amber-100 bg-amber-50/90 p-3 text-sm text-amber-950">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                                  Strands
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  Numbers, measurement, geometry, and data readiness
+                                </p>
+                              </div>
+                              <div className="rounded-[1.35rem] border border-emerald-100 bg-emerald-50/90 p-3 text-sm text-emerald-950">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                  Evidence
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  Observation, portfolios, tasks, and mastery rubrics
+                                </p>
+                              </div>
+                              <div className="rounded-[1.35rem] border border-sky-100 bg-sky-50/90 p-3 text-sm text-sky-950">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                                  Roadmap
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  PP1 first, then PP2 and Grade 1-3 progression
+                                </p>
+                              </div>
                             </div>
-                            <div className="rounded-[1.35rem] border border-sky-100 bg-sky-50/90 p-3 text-sm text-sky-950">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                                Coding
-                              </p>
-                              <p className="mt-1 font-semibold">
-                                {course.codingFocus ?? "Core coding practice"}
-                              </p>
+                          ) : (
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="rounded-[1.35rem] border border-emerald-100 bg-emerald-50/90 p-3 text-sm text-emerald-950">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                  AI
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  {course.aiFocus ?? "Age-appropriate AI concept"}
+                                </p>
+                              </div>
+                              <div className="rounded-[1.35rem] border border-sky-100 bg-sky-50/90 p-3 text-sm text-sky-950">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                                  Coding
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  {course.codingFocus ?? "Core coding practice"}
+                                </p>
+                              </div>
+                              <div className="rounded-[1.35rem] border border-amber-100 bg-amber-50/90 p-3 text-sm text-amber-950">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                                  Maths
+                                </p>
+                                <p className="mt-1 font-semibold">
+                                  {course.mathFocus ?? "Math in context"}
+                                </p>
+                              </div>
                             </div>
-                            <div className="rounded-[1.35rem] border border-amber-100 bg-amber-50/90 p-3 text-sm text-amber-950">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
-                                Maths
-                              </p>
-                              <p className="mt-1 font-semibold">
-                                {course.mathFocus ?? "Math in context"}
-                              </p>
-                            </div>
-                          </div>
+                          )}
                         </div>
 
                         <aside className="rounded-[1.8rem] border border-slate-900/8 bg-slate-950 px-5 py-5 text-white shadow-[0_18px_44px_rgba(15,23,42,0.22)]">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/52">
-                                Mission profile
+                                {course.id === "course-math" ? "Curriculum profile" : "Mission profile"}
                               </p>
                               <p className="mt-2 text-lg font-semibold text-white">
-                                {curriculumPlan?.badgeLabel ?? "Studio Mission"}
+                                {course.id === "course-math"
+                                  ? "PP1 counting roadmap"
+                                  : curriculumPlan?.badgeLabel ?? "Studio Mission"}
                               </p>
                             </div>
                             <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/68">
-                              {stage}
+                              {course.id === "course-math" ? "Maths" : stage}
                             </span>
                           </div>
 
                           <div className="mt-5 space-y-3">
                             <div>
                               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/48">
-                                Outcome
+                                {course.id === "course-math" ? "Competency" : "Outcome"}
                               </p>
                               <p className="mt-1 text-sm leading-6 text-white/74">
-                                {course.missionOutcome ?? "Project-based mission output"}
+                                {course.id === "course-math"
+                                  ? "Count concrete object sets from 5 to 9 and match each set to a numeral."
+                                  : course.missionOutcome ?? "Project-based mission output"}
                               </p>
                             </div>
-                            {course.sessionBlueprint && (
+                            {course.id === "course-math" ? (
+                              <div className="grid gap-2 text-sm leading-6 text-white/74">
+                                <p>
+                                  <span className="font-semibold text-white">Activity:</span>{" "}
+                                  count cups, tins, seeds, sticks, or bottle tops.
+                                </p>
+                                <p>
+                                  <span className="font-semibold text-white">Evidence:</span>{" "}
+                                  game attempt plus teacher observation note.
+                                </p>
+                                <p>
+                                  <span className="font-semibold text-white">Support:</span> AI and
+                                  coding stay in teacher/curriculum context.
+                                </p>
+                              </div>
+                            ) : course.sessionBlueprint ? (
                               <div>
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/48">
                                   Session rhythm
@@ -628,28 +821,45 @@ export default async function CoursesPage() {
                                   {course.sessionBlueprint}
                                 </p>
                               </div>
+                            ) : null}
+                            {course.id !== "course-math" && (
+                              <p className="text-sm leading-6 text-white/60">
+                                {STAGE_HOOKS[stage] ?? STAGE_HOOKS.Mission}
+                              </p>
                             )}
-                            <p className="text-sm leading-6 text-white/60">
-                              {STAGE_HOOKS[stage] ?? STAGE_HOOKS.Mission}
-                            </p>
                           </div>
 
-                          <div className="mt-5 space-y-3">
-                            {blendRows(course.id).map((row) => (
-                              <div key={`${course.id}-${row.key}`} className="space-y-1.5">
-                                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em]">
-                                  <span className={row.textClass}>{row.label}</span>
-                                  <span className="text-white/72">{row.value}%</span>
+                          {course.id === "course-math" ? (
+                            <div className="mt-5 rounded-[1.35rem] border border-white/12 bg-white/8 p-4">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/48">
+                                First game
+                              </p>
+                              <p className="mt-2 text-sm font-semibold leading-6 text-white">
+                                PP1 Count The Set
+                              </p>
+                              <p className="mt-1 text-sm leading-6 text-white/68">
+                                Large object sets, number choices, and attempt evidence for counting
+                                5-9.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="mt-5 space-y-3">
+                              {blendRows(course.id).map((row) => (
+                                <div key={`${course.id}-${row.key}`} className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em]">
+                                    <span className={row.textClass}>{row.label}</span>
+                                    <span className="text-white/72">{row.value}%</span>
+                                  </div>
+                                  <div className="h-2 rounded-full bg-white/10">
+                                    <div
+                                      className={`h-full rounded-full bg-gradient-to-r ${row.barClass}`}
+                                      style={{ width: `${row.value}%` }}
+                                    />
+                                  </div>
                                 </div>
-                                <div className="h-2 rounded-full bg-white/10">
-                                  <div
-                                    className={`h-full rounded-full bg-gradient-to-r ${row.barClass}`}
-                                    style={{ width: `${row.value}%` }}
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+                          )}
 
                           {nextMissions.length > 0 && (
                             <div className="mt-5">
@@ -675,13 +885,17 @@ export default async function CoursesPage() {
                               href={`/courses/${course.id}`}
                               className="inline-flex min-h-11 items-center rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/12"
                             >
-                              View mission
+                              {course.id === "course-math" ? "View roadmap" : "View mission"}
                             </Link>
                             <Link
-                              href={startHref}
+                              href={
+                                course.id === "course-math"
+                                  ? "/games/game-pp1-count-sets"
+                                  : startHref
+                              }
                               className="inline-flex min-h-11 items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
                             >
-                              Start mission
+                              {course.id === "course-math" ? "Play counting game" : "Start mission"}
                             </Link>
                           </div>
                         </aside>

@@ -6,6 +6,10 @@ import LearnerPageHeader from "@/components/shared/LearnerPageHeader";
 import SiteHeader from "@/components/shared/SiteHeader";
 import { buildSignInRedirectUrl } from "@/lib/auth/post-auth-routing";
 import { getCourseCurriculumPlan } from "@/lib/curriculum/learning-path";
+import {
+  FIRST_MATH_VERTICAL_SLICE,
+  PP1_TERM2_ALIGNMENT,
+} from "@/lib/curriculum/math-roadmap";
 import { getAuthStateWithTimeout } from "@/lib/server/auth";
 import { getCourse, listLessons } from "@/lib/server/data";
 
@@ -46,6 +50,53 @@ const LESSON_MOMENTS = [
   "Extension challenge",
 ];
 
+const MATHS_ROADMAP_BLOCKS = [
+  {
+    label: "Start here",
+    title: "Begin with PP1 counting 5-9",
+    body: "This maths path starts with real object sets, clear number choices, and short practice that helps learners count carefully.",
+  },
+  {
+    label: "Practice",
+    title: "Count, choose, and check",
+    body: "Learners count cups, tins, seeds, sticks, and bottle tops, then match each set to the correct numeral.",
+  },
+  {
+    label: "What comes next",
+    title: "Build confidence before moving on",
+    body: "After counting is steady, the roadmap continues into sequencing, number writing, measurement, and later PP2 to Grade 3 maths skills.",
+  },
+];
+
+const MATHS_TERM_SEQUENCE = [
+  "Next: ordering numbers and finding missing numbers",
+  "After that: numeral writing and early measurement",
+  "Later: stronger maths confidence from PP2 into Grade 1-3",
+];
+
+const MATHS_REVIEW_CHECKS = [
+  "Start with real classroom objects before the game.",
+  "Count each object once and say the number clearly.",
+  "Choose the matching numeral after counting.",
+  "Use the game for extra practice, not as the first activity.",
+  "Keep building toward PP2 and Grade 1 readiness.",
+];
+
+const PP1_COUNTING_CLASSROOM_FLOW = [
+  {
+    label: "Activity",
+    value: "Count real cups, tins, seeds, sticks, or bottle tops in sets of 5 to 9.",
+  },
+  {
+    label: "Evidence",
+    value: "Learner counts each object once and chooses the matching numeral.",
+  },
+  {
+    label: "Teacher note",
+    value: "Record skipped counts, double-counts, correct matches, and prompt level.",
+  },
+];
+
 function stageTone(stage?: string) {
   if (stage === "Explorer") return "border-amber-200 bg-amber-50 text-amber-900";
   if (stage === "Builder") return "border-sky-200 bg-sky-50 text-sky-900";
@@ -83,6 +134,9 @@ export async function generateMetadata({
   if (!course) return { title: "Course | LearnBridge" };
   if ("isPublished" in course && !course.isPublished) {
     return { title: "Course | LearnBridge" };
+  }
+  if (courseId === "course-math") {
+    return { title: "Kenya CBC/CBE Maths Roadmap | LearnBridge" };
   }
   return { title: `${course.title} | LearnBridge` };
 }
@@ -134,6 +188,356 @@ export default async function CourseDetailPage({ params }: CourseDetailPageProps
     orderedLessons.length > 0
       ? `/courses/${courseId}/lessons/${orderedLessons[0].id}`
       : `/courses/${courseId}`;
+
+  if (course.id === "course-math") {
+    return (
+      <div className="relative min-h-screen overflow-hidden">
+        <SiteHeader withAuth={false} />
+
+        <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 pb-20 pt-8 md:px-8">
+          {authState.status === "timed_out" && (
+            <LearnerRouteAuthBridge
+              redirectUrl={`/courses/${courseId}`}
+              eyebrow="Learner session"
+              title="Checking your maths roadmap access."
+              description="The roadmap is ready. If your session expired, we will move you to sign-in before opening the full maths view."
+            />
+          )}
+
+          <LearnerPageHeader
+            eyebrow="Mathematics roadmap"
+            title="Kenya CBC/CBE Maths Roadmap"
+            description="A classroom-first path for Mathematical Activities. Start with PP1 counting 5-9, collect teacher evidence, then extend the same structure into PP2 and Grade 1-3."
+            titleClassName="max-w-4xl text-3xl font-semibold leading-[1.08] text-slate-950 md:text-4xl"
+            badges={
+              <>
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-900">
+                  PP1 first
+                </span>
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-900">
+                  CBC/CBE aligned
+                </span>
+              </>
+            }
+            actions={
+              <>
+                <Link
+                  href={`/games/${FIRST_MATH_VERTICAL_SLICE.gameId}`}
+                  className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
+                >
+                  Play PP1 counting game
+                </Link>
+                <Link
+                  href="#pp1-week-1"
+                  className="inline-flex min-h-12 items-center rounded-full border border-amber-200 bg-amber-50 px-6 py-3 text-sm font-semibold text-amber-950 transition hover:border-amber-300"
+                >
+                  View PP1 Week 1 plan
+                </Link>
+                {orderedLessons.length > 0 && (
+                  <Link
+                    href={startHref}
+                    className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                  >
+                    Open maths lesson
+                  </Link>
+                )}
+                <Link
+                  href="/courses"
+                  className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                >
+                  Back to library
+                </Link>
+              </>
+            }
+          >
+            <div className="grid gap-4 md:grid-cols-4">
+                {[
+                  { label: "Start level", value: "PP1" },
+                  { label: "Current slice", value: "PP1 Term 2 Week 1" },
+                  { label: "Focus", value: "Counting 5-9" },
+                  { label: "Practice", value: "5 sets to try" },
+                ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-[1.25rem] border border-slate-200 bg-white p-4"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </LearnerPageHeader>
+
+          <section className="grid gap-5 lg:grid-cols-3">
+            {MATHS_ROADMAP_BLOCKS.map((block) => (
+              <article
+                key={block.label}
+                className="rounded-[1.8rem] border border-slate-200/80 bg-white/90 p-5 shadow-[0_16px_38px_rgba(15,23,42,0.06)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">
+                  {block.label}
+                </p>
+                <h2
+                  className="mt-2 text-2xl font-semibold text-slate-950"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  {block.title}
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{block.body}</p>
+              </article>
+            ))}
+          </section>
+
+          <section
+            id="pp1-week-1"
+            className="rounded-[2.25rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  PP1 Term 2 Week 1
+                </p>
+                <h2
+                  className="mt-2 text-2xl font-semibold text-slate-950"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  Counting 5-9 is the first maths practice slice.
+                </h2>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                  Keep the learner task simple: count each object once, then choose the matching
+                  number. The digital game supports teacher observation; it does not replace
+                  classroom counting with real objects.
+                </p>
+              </div>
+              <Link
+                href={`/games/${FIRST_MATH_VERTICAL_SLICE.gameId}`}
+                className="inline-flex min-h-11 items-center rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-900"
+              >
+                Play PP1 Count The Set
+              </Link>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {PP1_COUNTING_CLASSROOM_FLOW.map((item) => (
+                <article
+                  key={item.label}
+                  className="rounded-[1.35rem] border border-amber-100 bg-amber-50/80 p-4"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-800">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-amber-950">
+                    {item.value}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-5 overflow-hidden rounded-[1.6rem] border border-slate-200 bg-white">
+              <div className="grid grid-cols-[0.9fr_1.35fr_1.2fr_1.25fr] gap-0 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 max-lg:hidden">
+                <span>Strand</span>
+                <span>Competency</span>
+                <span>Activity / Game</span>
+                <span>Evidence</span>
+              </div>
+              {PP1_TERM2_ALIGNMENT.map((item) => (
+                <article
+                  key={item.id}
+                  className="grid gap-4 border-b border-slate-200 px-4 py-4 last:border-b-0 lg:grid-cols-[0.9fr_1.35fr_1.2fr_1.25fr]"
+                >
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">
+                      Strand
+                    </p>
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-900">
+                      {item.strand}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">
+                      Competency
+                    </p>
+                    <p className="text-sm font-semibold leading-6 text-slate-950">
+                      {item.competency}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">
+                      Activity / Game
+                    </p>
+                    <p className="text-sm leading-6 text-slate-700">{item.classroomActivity}</p>
+                    {item.gameId ? (
+                      <Link
+                        href={`/games/${item.gameId}`}
+                        className="mt-2 inline-flex min-h-10 items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 transition hover:border-sky-300"
+                      >
+                        Open game
+                      </Link>
+                    ) : (
+                      <p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Game placeholder
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 lg:hidden">
+                      Evidence
+                    </p>
+                    <p className="text-sm leading-6 text-slate-700">{item.evidence}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="rounded-[2.25rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                What comes next
+              </p>
+              <h2
+                className="mt-2 text-2xl font-semibold text-slate-950"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                After counting 5-9, learners keep building number confidence.
+              </h2>
+              <div className="mt-5 space-y-3">
+                {MATHS_TERM_SEQUENCE.map((item, index) => (
+                  <div
+                    key={item}
+                    className="flex gap-3 rounded-[1.35rem] border border-slate-200 bg-white/90 p-4"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-semibold text-white">
+                      {index + 1}
+                    </span>
+                    <p className="text-sm leading-6 text-slate-700">{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <aside className="rounded-[2.25rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                Remember
+              </p>
+              <h2
+                className="mt-2 text-2xl font-semibold text-slate-950"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Maths stays primary from the first click.
+              </h2>
+              <ul className="mt-5 space-y-3">
+                {MATHS_REVIEW_CHECKS.map((check) => (
+                  <li
+                    key={check}
+                    className="rounded-[1.35rem] border border-emerald-100 bg-emerald-50/90 px-4 py-3 text-sm font-semibold leading-6 text-emerald-950"
+                  >
+                    {check}
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <article className="rounded-[2.25rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                Practice summary
+              </p>
+              <h2
+                className="mt-2 text-2xl font-semibold text-slate-950"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                PP1 Term 2 Week 1: Counting 5-9
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                Count the objects. Choose the matching number. Try again if you missed one.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {[
+                  { label: "Game", value: "PP1 Count The Set" },
+                  { label: "Sets", value: "5 object groups" },
+                  { label: "Goal", value: "Match each set to 5, 6, 7, 8, or 9" },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-[1.25rem] border border-slate-200 bg-slate-50/80 p-4"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-900">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <div className="rounded-[2.25rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                Maths lesson steps
+              </p>
+              <h2
+                className="mt-2 text-2xl font-semibold text-slate-950"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Open the lesson path after the first counting game.
+              </h2>
+              {orderedLessons.length > 0 && (
+                <Link
+                  href={startHref}
+                  className="inline-flex min-h-11 items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:border-slate-300"
+                >
+                  Open first step
+                </Link>
+              )}
+              <ul className="mt-5 grid gap-4">
+                {orderedLessons.map((lesson, index) => (
+                  <li
+                    key={lesson.id}
+                    className="rounded-[1.7rem] border border-slate-200/80 bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="max-w-2xl">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                          Step {index + 1}
+                        </p>
+                        <h3
+                          className="mt-2 text-xl font-semibold text-slate-950"
+                          style={{ fontFamily: "var(--font-display)" }}
+                        >
+                          {lesson.title}
+                        </h3>
+                        <p className="mt-3 text-sm leading-6 text-slate-600">{lesson.notes}</p>
+                      </div>
+                      <Link
+                        href={`/courses/${courseId}/lessons/${lesson.id}`}
+                        className="inline-flex min-h-11 items-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-900"
+                      >
+                        Open lesson
+                      </Link>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          <p className="text-sm text-slate-600">
+            <Link
+              href="/courses"
+              className="inline-flex min-h-11 items-center rounded-full px-2 text-slate-700 underline decoration-slate-300 transition hover:bg-slate-100/70 hover:text-slate-950"
+            >
+              Back to courses
+            </Link>
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden">

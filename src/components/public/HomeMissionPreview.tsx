@@ -13,6 +13,8 @@ type MissionPreview = {
   build: string;
   explain: string;
   tone: string;
+  redirectUrl: string;
+  primaryCta: string;
 };
 
 const previews: MissionPreview[] = [
@@ -25,16 +27,20 @@ const previews: MissionPreview[] = [
     build: "Group shapes into matching buckets and test one sorting rule.",
     explain: "Tell a teacher why one item belongs in a different group.",
     tone: "border-amber-200 bg-amber-50/90 text-amber-950",
+    redirectUrl: "/courses",
+    primaryCta: "Continue to full courses",
   },
   {
-    id: "preview-robot",
-    label: "Sample mission",
-    title: "Robot Coders Math Lab",
-    ageBand: "Ages 8-10",
-    concept: "Use step logic, counts, and coordinates to move a robot accurately.",
-    build: "Choose commands, test them, and fix one route mistake.",
-    explain: "Show the maths behind the robot's final path.",
+    id: "preview-maths-roadmap",
+    label: "PP1 maths sample",
+    title: "Kenya CBC/CBE Maths Roadmap",
+    ageBand: "PP1 to Grade 3",
+    concept: "Start with PP1 counting 5-9 before moving into sequencing, number writing, and measurement.",
+    build: "Count cups, bottle tops, seeds, sticks, and tins, then match each set to the right number.",
+    explain: "Show the teacher which counting attempt proves the learner matched each set correctly.",
     tone: "border-sky-200 bg-sky-50/90 text-sky-950",
+    redirectUrl: "/courses/course-math",
+    primaryCta: "Open maths roadmap",
   },
 ];
 
@@ -57,7 +63,8 @@ export default function HomeMissionPreview() {
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-600">
               These previews show the learning rhythm and the kind of thinking the platform asks
-              for. The full mission library, saved progress, and build evidence stay private.
+              for. The PP1 maths preview leads into the private roadmap and counting game. The
+              full course library, saved progress, and build evidence stay private.
             </p>
           </div>
           <Link
@@ -155,10 +162,10 @@ export default function HomeMissionPreview() {
               </p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <Link
-                  href={buildSignInRedirectUrl("/courses")}
+                  href={buildSignInRedirectUrl(activePreview.redirectUrl)}
                   className="inline-flex min-h-11 items-center rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-900"
                 >
-                  Continue to full courses
+                  {activePreview.primaryCta}
                 </Link>
                 <Link
                   href="/sign-up"
