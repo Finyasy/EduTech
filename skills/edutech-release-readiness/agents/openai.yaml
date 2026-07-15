@@ -1,0 +1,4 @@
+interface:
+  display_name: "EduTech Release Readiness"
+  short_description: "Validate EduTech before release."
+  default_prompt: "Check EduTech release readiness and report blockers."

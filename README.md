@@ -8,6 +8,8 @@ EduTech is a gamified learning platform for logic and mathematics. Students lear
 - Lesson videos, notes, and quizzes (multiple choice + short answer)
 - Game catalog with levels, attempts, and best scores
 - Student progress tracking (continue watching, streaks, completions)
+- Learner artifact submissions for lesson build evidence
+- Mastery rubric and score schema for AI, coding, and math growth
 - Admin workflows for creating/editing courses and lessons
 - Mock data fallback when the database isn’t configured
 
@@ -50,6 +52,7 @@ MIGRATE_DATABASE_URL="postgresql://USER:PASSWORD@DIRECT_HOST:5432/DB"
 # Clerk (required for auth UI)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
 CLERK_SECRET_KEY="sk_..."
+CLERK_WEBHOOK_SIGNING_SECRET="whsec_..."
 NEXT_PUBLIC_APP_URL="https://your-domain.vercel.app"
 
 # Comma-separated list of admin emails
@@ -106,6 +109,8 @@ Open `http://localhost:3000`.
 - `src/lib` — server helpers and utilities
 - `prisma` — schema, migrations, and seed script
 - `public` — static assets
+- `docs/README.md` — documentation index for setup, auth, runtime, and release guides
+- `docs/CODEX_MARKDOWN_GUIDE.md` — Codex Markdown and future skill metadata rules
 
 ## Vercel Deployment
 
