@@ -140,21 +140,6 @@ const writeAccessUserMemoryCache = (user: AccessUser | null) => {
   return user;
 };
 
-const toAccessUser = (
-  user: Pick<User, "id" | "email" | "name" | "role"> | null,
-): AccessUser | null => {
-  if (!user?.email) {
-    return null;
-  }
-
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  };
-};
-
 export const isLearnerRole = (role: User["role"] | null | undefined) =>
   role === "STUDENT";
 
@@ -256,8 +241,25 @@ async function getAccessUserWithTimeout(
   try {
     return await Promise.race([
       (async () => {
-        const dbUser = await ensureUserByIdWithTimeout(userId, timeoutMs);
-        const accessUser = toAccessUser(dbUser);
+        const prisma = getPrisma();
+        if (!prisma) {
+          return staleUser;
+        }
+
+        const accessUser = await withAuthLookupTimeout(
+          prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+            },
+          }),
+          "auth access lookup",
+          timeoutMs,
+        );
+
         if (accessUser) {
           return writeAccessUserMemoryCache(accessUser);
         }
