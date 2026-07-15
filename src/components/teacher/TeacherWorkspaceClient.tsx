@@ -8,9 +8,16 @@ import {
   buildTeacherAlignmentRecommendations,
   getCourseCurriculumPlan,
 } from "@/lib/curriculum/learning-path";
+import PP1CountingClassEvidenceOverview from "@/components/teacher/PP1CountingClassEvidenceOverview";
+import {
+  PP1_COUNTING_COMPETENCY_ID,
+  type MathCurriculumTeacherJudgement,
+} from "@/lib/curriculum/math-roadmap";
+import PP1CountingEvidencePanel from "@/components/teacher/PP1CountingEvidencePanel";
 import RecentArtifactsPanel from "@/components/teacher/RecentArtifactsPanel";
 import type {
   CourseOverview,
+  TeacherClassCurriculumEvidenceItem,
   TeacherLearnerDashboardSummary,
 } from "@/lib/server/data";
 import type {
@@ -51,6 +58,13 @@ type LearnersList = TeacherWorkspaceSnapshot["learners"];
 type LearnerDashboardState = {
   learnerId: string;
   summary: TeacherLearnerDashboardSummary | null;
+  isLoading: boolean;
+  error: string | null;
+};
+
+type ClassCurriculumEvidenceState = {
+  classId: string | null;
+  items: TeacherClassCurriculumEvidenceItem[];
   isLoading: boolean;
   error: string | null;
 };
@@ -228,7 +242,15 @@ export default function TeacherWorkspaceClient({
   const [error, setError] = useState<string | null>(null);
   const [learnerDashboard, setLearnerDashboard] =
     useState<LearnerDashboardState | null>(null);
+  const [classCurriculumEvidence, setClassCurriculumEvidence] =
+    useState<ClassCurriculumEvidenceState>({
+      classId: initialWorkspace.activeClassId,
+      items: [],
+      isLoading: false,
+      error: null,
+    });
   const refreshRequestIdRef = useRef(0);
+  const classEvidenceRequestIdRef = useRef(0);
   const workspaceRefreshInFlightRef = useRef(false);
 
   const activeClass = useMemo(
@@ -468,6 +490,20 @@ export default function TeacherWorkspaceClient({
     activeActivityId,
   ]);
 
+  useEffect(() => {
+    if (!activeClassId) {
+      setClassCurriculumEvidence({
+        classId: null,
+        items: [],
+        isLoading: false,
+        error: null,
+      });
+      return;
+    }
+
+    void loadClassCurriculumEvidence(activeClassId);
+  }, [activeClassId]);
+
   async function refreshWorkspace(next?: {
     classId?: string | null;
     subjectId?: string;
@@ -538,6 +574,57 @@ export default function TeacherWorkspaceClient({
       if (requestId === refreshRequestIdRef.current) {
         workspaceRefreshInFlightRef.current = false;
         setIsWorkspaceRefreshing(false);
+      }
+    }
+  }
+
+  async function loadClassCurriculumEvidence(classId: string) {
+    const requestId = classEvidenceRequestIdRef.current + 1;
+    classEvidenceRequestIdRef.current = requestId;
+    setClassCurriculumEvidence((current) => ({
+      classId,
+      items: current.classId === classId ? current.items : [],
+      isLoading: true,
+      error: null,
+    }));
+
+    try {
+      const response = await fetch(
+        `/api/teach/class/${encodeURIComponent(
+          classId,
+        )}/curriculum-evidence?competencyId=${encodeURIComponent(
+          PP1_COUNTING_COMPETENCY_ID,
+        )}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(
+          await readError(response, "Unable to load class PP1 evidence."),
+        );
+      }
+
+      const payload = (await response.json()) as {
+        evidence: TeacherClassCurriculumEvidenceItem[];
+      };
+      if (requestId === classEvidenceRequestIdRef.current) {
+        setClassCurriculumEvidence({
+          classId,
+          items: payload.evidence,
+          isLoading: false,
+          error: null,
+        });
+      }
+    } catch (loadError) {
+      if (requestId === classEvidenceRequestIdRef.current) {
+        setClassCurriculumEvidence({
+          classId,
+          items: [],
+          isLoading: false,
+          error:
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load class PP1 evidence.",
+        });
       }
     }
   }
@@ -813,6 +900,51 @@ export default function TeacherWorkspaceClient({
             : "Unable to load learner progress.",
       });
     }
+  }
+
+  function updateLearnerDashboardTeacherJudgement(
+    competencyId: string,
+    teacherJudgement: MathCurriculumTeacherJudgement,
+  ) {
+    setLearnerDashboard((current) => {
+      if (!current?.summary) {
+        return current;
+      }
+
+      return {
+        ...current,
+        summary: {
+          ...current.summary,
+          curriculumEvidence: (current.summary.curriculumEvidence ?? []).map((item) =>
+            item.competencyId === competencyId
+              ? { ...item, teacherJudgement }
+              : item,
+          ),
+        },
+      };
+    });
+    setClassCurriculumEvidence((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.learner.id === learnerDashboard?.learnerId &&
+        item.evidence.competencyId === competencyId
+          ? {
+              ...item,
+              evidence: {
+                ...item.evidence,
+                teacherJudgement,
+                teacherJudgementHistory: [
+                  {
+                    ...teacherJudgement,
+                    recordedAt: teacherJudgement.updatedAt ?? new Date().toISOString(),
+                  },
+                  ...item.evidence.teacherJudgementHistory,
+                ].slice(0, 5),
+              },
+            }
+          : item,
+      ),
+    }));
   }
 
   async function advanceLearnerStatus(learnerId: string) {
@@ -1435,6 +1567,19 @@ export default function TeacherWorkspaceClient({
 
             {readOnlyAlignmentPanel}
 
+            <PP1CountingClassEvidenceOverview
+              learners={workspace.learners}
+              sessionStatuses={workspace.sessionStatuses}
+              classEvidence={classCurriculumEvidence.items}
+              activeSummary={learnerDashboard?.summary ?? null}
+              isLoading={
+                Boolean(learnerDashboard?.isLoading) ||
+                classCurriculumEvidence.isLoading
+              }
+              error={classCurriculumEvidence.error}
+              onOpenLearner={(learnerId) => void loadLearnerDashboard(learnerId)}
+            />
+
             <form onSubmit={submitLearner} className="flex flex-wrap gap-2">
               <input
                 value={addLearnerName}
@@ -1545,6 +1690,12 @@ export default function TeacherWorkspaceClient({
                       </p>
                     )}
 
+                    <PP1CountingEvidencePanel
+                      key={learnerDashboard.summary.learner.id}
+                      summary={learnerDashboard.summary}
+                      onSaved={updateLearnerDashboardTeacherJudgement}
+                    />
+
                     <div className="grid gap-3 md:grid-cols-4">
                       <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1600,7 +1751,7 @@ export default function TeacherWorkspaceClient({
                               className="h-full rounded-full bg-sky-500"
                               style={{
                                 width: `${
-                                  learnerDashboard.summary.dashboard?.mastery[area] ?? 0
+                                  learnerDashboard.summary?.dashboard?.mastery[area] ?? 0
                                 }%`,
                               }}
                             />

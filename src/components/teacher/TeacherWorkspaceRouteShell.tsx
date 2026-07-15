@@ -114,22 +114,13 @@ export default function TeacherWorkspaceRouteShell({
   const initialQuery = useMemo(() => searchParams.toString(), [searchParams]);
   const initialQueryRef = useRef(initialQuery);
   const didBootstrapRef = useRef(false);
-  const initialCachedWorkspaceRef = useRef<TeacherWorkspaceSnapshot | null>(
-    readCachedWorkspace(basePath),
-  );
-  const workspaceRef = useRef<TeacherWorkspaceSnapshot | null>(
-    initialCachedWorkspaceRef.current,
-  );
+  const workspaceRef = useRef<TeacherWorkspaceSnapshot | null>(null);
   const detailRequestIdRef = useRef(0);
   const detailHydrationInFlightRef = useRef(false);
-  const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot | null>(
-    () => initialCachedWorkspaceRef.current,
-  );
+  const [workspace, setWorkspace] = useState<TeacherWorkspaceSnapshot | null>(null);
   const [resolvedCourseCatalog, setResolvedCourseCatalog] =
     useState<CourseOverview[]>(courseCatalog);
-  const [isLoading, setIsLoading] = useState(
-    () => initialCachedWorkspaceRef.current === null,
-  );
+  const [isLoading, setIsLoading] = useState(true);
   const [isHydratingDetails, setIsHydratingDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -307,13 +298,19 @@ export default function TeacherWorkspaceRouteShell({
       return;
     }
     didBootstrapRef.current = true;
+    const cachedWorkspace = readCachedWorkspace(basePath);
+    if (cachedWorkspace) {
+      workspaceRef.current = cachedWorkspace;
+      setWorkspace(cachedWorkspace);
+      setIsLoading(false);
+    }
     void loadWorkspace();
     void loadCourseCatalog();
-  }, [loadCourseCatalog, loadWorkspace]);
+  }, [basePath, loadCourseCatalog, loadWorkspace]);
 
   if (isLoading && !workspace) {
     return (
-      <section className="rounded-3xl border border-white/80 bg-white/92 p-6 shadow-sm">
+      <section className="rounded-3xl border border-white/80 bg-white/95 p-6 shadow-sm">
         <div className="mb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-600">
             Loading workspace
