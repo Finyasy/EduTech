@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { PP1_COUNT_THE_SET_LEVELS } from "@/lib/curriculum/math-roadmap";
 import {
   getCourse,
   getGameWithLevels,
@@ -45,6 +46,7 @@ describe("server data (mock fallback)", () => {
 
     expect(result).toHaveLength(games.length);
     expect(result[0]?.id).toBe(games[0]?.id);
+    expect(result.map((game) => game.id)).toContain("game-pp1-count-sets");
   });
 
   it("returns game levels for mock game", async () => {
@@ -52,6 +54,19 @@ describe("server data (mock fallback)", () => {
 
     expect(result?.levels.length).toBeGreaterThan(0);
     expect(result?.game.id).toBe("game-logic-quest");
+  });
+
+  it("returns PP1 counting game levels for the maths vertical slice", async () => {
+    const result = await getGameWithLevels("game-pp1-count-sets");
+
+    expect(result?.game.title).toBe("PP1 Count The Set");
+    expect(result?.levels).toHaveLength(PP1_COUNT_THE_SET_LEVELS.length);
+    expect(result?.levels.map((level) => level.id)).toEqual(
+      PP1_COUNT_THE_SET_LEVELS.map((level) => level.id),
+    );
+    expect(result?.levels[0]?.configJson.answer).toBe(
+      PP1_COUNT_THE_SET_LEVELS[0]?.answer,
+    );
   });
 });
 

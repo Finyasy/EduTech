@@ -1,6 +1,13 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
+import {
+  getMathCurriculumRecordById,
+  type MathCurriculumRubricLevel,
+  type MathCurriculumSupportLevel,
+  type MathCurriculumTeacherJudgement,
+  type MathCurriculumTeacherJudgementHistoryEntry,
+} from "@/lib/curriculum/math-roadmap";
 import { getPrisma } from "@/lib/server/prisma";
 import { isLearnerRole } from "@/lib/server/auth";
 import {
@@ -50,6 +57,20 @@ type UpdateClassInput = {
 type AddLearnerInput = {
   name: string;
   userEmail?: string | null;
+};
+
+type UpsertTeacherLearnerCurriculumEvidenceInput = {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+  note?: string | null;
+  rubricLevelOverride?: MathCurriculumRubricLevel | null;
+  supportLevelOverride?: MathCurriculumSupportLevel | null;
+  countedEachObjectOnce?: boolean;
+  skippedDoubleCounted?: boolean;
+  matchedNumeralCorrectly?: boolean;
+  neededPrompts?: boolean;
 };
 
 type TeacherAssignmentAnalyticsFilters = {
@@ -377,6 +398,22 @@ const STATUS_FLOW: LearnerProgressStatus[] = [
 const STATUS_DEFAULT: LearnerProgressStatus = "KEEP_GOING";
 const CARD_COLORS = ["bg-rose-100", "bg-sky-100", "bg-amber-100", "bg-lime-100"];
 const FIRST_ACTIVITY_ID = ACTIVITIES[0]?.id ?? null;
+const curriculumEvidenceMemoryKey = (learnerId: string, competencyId: string) =>
+  `${learnerId}::${competencyId}`;
+
+const toTeacherJudgementHistoryEntry = (input: MathCurriculumTeacherJudgement & {
+  recordedAt: string;
+}): MathCurriculumTeacherJudgementHistoryEntry => ({
+  note: input.note,
+  rubricLevelOverride: input.rubricLevelOverride,
+  supportLevelOverride: input.supportLevelOverride,
+  countedEachObjectOnce: input.countedEachObjectOnce,
+  skippedDoubleCounted: input.skippedDoubleCounted,
+  matchedNumeralCorrectly: input.matchedNumeralCorrectly,
+  neededPrompts: input.neededPrompts,
+  updatedAt: input.updatedAt,
+  recordedAt: input.recordedAt,
+});
 
 type MemoryWorkspace = {
   school: TeacherSchoolSettings;
@@ -384,6 +421,28 @@ type MemoryWorkspace = {
   learners: TeacherLearner[];
   sessionStatuses: Record<string, Record<string, LearnerProgressStatus>>;
   assignments: TeacherMissionAssignment[];
+  curriculumEvidence: Record<
+    string,
+    MathCurriculumTeacherJudgement & {
+      competencyId: string;
+      rubricId: string;
+      gameId: string | null;
+      classId: string;
+      learnerId: string;
+      ownerKey: string;
+      createdAt: string;
+    }
+  >;
+  curriculumEvidenceHistory: Array<
+    MathCurriculumTeacherJudgementHistoryEntry & {
+      competencyId: string;
+      rubricId: string;
+      gameId: string | null;
+      classId: string;
+      learnerId: string;
+      ownerKey: string;
+    }
+  >;
   idCounter: number;
 };
 
@@ -800,6 +859,8 @@ const createMemoryWorkspace = (ownerKey: string): MemoryWorkspace => {
     learners: seededLearners(activeClassId),
     sessionStatuses: {},
     assignments: seededAssignments,
+    curriculumEvidence: {},
+    curriculumEvidenceHistory: [],
     idCounter: 3000,
   };
 };
@@ -813,6 +874,152 @@ const getMemoryWorkspace = (ownerKey: string) => {
   const created = createMemoryWorkspace(ownerKey);
   memoryStore.set(ownerKey, created);
   return created;
+};
+
+const getTeacherLearnerCurriculumEvidenceMemory = (input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+}): MathCurriculumTeacherJudgement | null => {
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    return null;
+  }
+  const learner = workspace.learners.find(
+    (item) => item.id === input.learnerId && item.classId === input.classId,
+  );
+  if (!learner) {
+    return null;
+  }
+
+  const record =
+    workspace.curriculumEvidence[
+      curriculumEvidenceMemoryKey(input.learnerId, input.competencyId)
+    ] ?? null;
+  if (!record) {
+    return null;
+  }
+
+  return {
+    note: record.note,
+    rubricLevelOverride: record.rubricLevelOverride,
+    supportLevelOverride: record.supportLevelOverride,
+    countedEachObjectOnce: record.countedEachObjectOnce,
+    skippedDoubleCounted: record.skippedDoubleCounted,
+    matchedNumeralCorrectly: record.matchedNumeralCorrectly,
+    neededPrompts: record.neededPrompts,
+    updatedAt: record.updatedAt,
+  };
+};
+
+const listTeacherLearnerCurriculumEvidenceHistoryMemory = (input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+  limit?: number;
+}): MathCurriculumTeacherJudgementHistoryEntry[] => {
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    return [];
+  }
+  const learner = workspace.learners.find(
+    (item) => item.id === input.learnerId && item.classId === input.classId,
+  );
+  if (!learner) {
+    return [];
+  }
+
+  return workspace.curriculumEvidenceHistory
+    .filter(
+      (item) =>
+        item.classId === input.classId &&
+        item.learnerId === input.learnerId &&
+        item.competencyId === input.competencyId,
+    )
+    .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))
+    .slice(0, input.limit ?? 10)
+    .map(toTeacherJudgementHistoryEntry);
+};
+
+const upsertTeacherLearnerCurriculumEvidenceMemory = (
+  input: UpsertTeacherLearnerCurriculumEvidenceInput,
+): MathCurriculumTeacherJudgement => {
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    throw new Error("Class not found.");
+  }
+  const learner = workspace.learners.find(
+    (item) => item.id === input.learnerId && item.classId === input.classId,
+  );
+  if (!learner) {
+    throw new Error("Learner not found.");
+  }
+
+  const updatedAt = nowIso();
+  workspace.curriculumEvidence[
+    curriculumEvidenceMemoryKey(input.learnerId, input.competencyId)
+  ] = {
+    ownerKey: input.ownerKey,
+    classId: input.classId,
+    learnerId: input.learnerId,
+    competencyId: input.competencyId,
+    rubricId: curriculumRecord.rubricId,
+    gameId: curriculumRecord.gameId ?? null,
+    note: input.note ?? null,
+    rubricLevelOverride: input.rubricLevelOverride ?? null,
+    supportLevelOverride: input.supportLevelOverride ?? null,
+    countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+    skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+    matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+    neededPrompts: input.neededPrompts ?? false,
+    createdAt: updatedAt,
+    updatedAt,
+  };
+  workspace.curriculumEvidenceHistory.unshift({
+    ownerKey: input.ownerKey,
+    classId: input.classId,
+    learnerId: input.learnerId,
+    competencyId: input.competencyId,
+    rubricId: curriculumRecord.rubricId,
+    gameId: curriculumRecord.gameId ?? null,
+    note: input.note ?? null,
+    rubricLevelOverride: input.rubricLevelOverride ?? null,
+    supportLevelOverride: input.supportLevelOverride ?? null,
+    countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+    skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+    matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+    neededPrompts: input.neededPrompts ?? false,
+    updatedAt,
+    recordedAt: updatedAt,
+  });
+
+  invalidateWorkspaceSnapshotCache(input.ownerKey);
+  return {
+    note: input.note ?? null,
+    rubricLevelOverride: input.rubricLevelOverride ?? null,
+    supportLevelOverride: input.supportLevelOverride ?? null,
+    countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+    skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+    matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+    neededPrompts: input.neededPrompts ?? false,
+    updatedAt,
+  };
 };
 
 const isSeededMemoryClassId = (ownerKey: string, classId: string) =>
@@ -2419,6 +2626,282 @@ export async function addTeacherLearner(
       const learner = addTeacherLearnerMemory(ownerKey, classId, name);
       invalidateWorkspaceSnapshotCache(ownerKey);
       return learner;
+    }
+    throw error;
+  }
+}
+
+export async function getTeacherLearnerCurriculumEvidence(input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+}): Promise<MathCurriculumTeacherJudgement | null> {
+  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+    return getTeacherLearnerCurriculumEvidenceMemory(input);
+  }
+
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    return getTeacherLearnerCurriculumEvidenceMemory(input);
+  }
+
+  try {
+    const record = await withTeacherWorkspaceDetailTimeout(
+      prisma.teacherLearnerCurriculumEvidence.findFirst({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+          competencyId: input.competencyId,
+          classroom: { ownerKey: input.ownerKey, isArchived: false },
+        },
+        select: {
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          updatedAt: true,
+        },
+      }),
+    );
+
+    if (!record) {
+      return null;
+    }
+
+    return {
+      note: record.note ?? null,
+      rubricLevelOverride:
+        (record.rubricLevelOverride as MathCurriculumRubricLevel | null) ?? null,
+      supportLevelOverride:
+        (record.supportLevelOverride as MathCurriculumSupportLevel | null) ?? null,
+      countedEachObjectOnce: record.countedEachObjectOnce,
+      skippedDoubleCounted: record.skippedDoubleCounted,
+      matchedNumeralCorrectly: record.matchedNumeralCorrectly,
+      neededPrompts: record.neededPrompts,
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      return getTeacherLearnerCurriculumEvidenceMemory(input);
+    }
+    throw error;
+  }
+}
+
+export async function listTeacherLearnerCurriculumEvidenceHistory(input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+  limit?: number;
+}): Promise<MathCurriculumTeacherJudgementHistoryEntry[]> {
+  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+    return listTeacherLearnerCurriculumEvidenceHistoryMemory(input);
+  }
+
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    return listTeacherLearnerCurriculumEvidenceHistoryMemory(input);
+  }
+
+  try {
+    const records = await withTeacherWorkspaceDetailTimeout(
+      prisma.teacherLearnerCurriculumEvidenceHistory.findMany({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+          competencyId: input.competencyId,
+          classroom: { ownerKey: input.ownerKey, isArchived: false },
+        },
+        orderBy: { recordedAt: "desc" },
+        take: input.limit ?? 10,
+        select: {
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          recordedAt: true,
+        },
+      }),
+    );
+
+    return records.map((record) => ({
+      note: record.note ?? null,
+      rubricLevelOverride:
+        (record.rubricLevelOverride as MathCurriculumRubricLevel | null) ?? null,
+      supportLevelOverride:
+        (record.supportLevelOverride as MathCurriculumSupportLevel | null) ?? null,
+      countedEachObjectOnce: record.countedEachObjectOnce,
+      skippedDoubleCounted: record.skippedDoubleCounted,
+      matchedNumeralCorrectly: record.matchedNumeralCorrectly,
+      neededPrompts: record.neededPrompts,
+      updatedAt: record.recordedAt.toISOString(),
+      recordedAt: record.recordedAt.toISOString(),
+    }));
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      return listTeacherLearnerCurriculumEvidenceHistoryMemory(input);
+    }
+    throw error;
+  }
+}
+
+export async function upsertTeacherLearnerCurriculumEvidence(
+  input: UpsertTeacherLearnerCurriculumEvidenceInput,
+): Promise<MathCurriculumTeacherJudgement> {
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+    return upsertTeacherLearnerCurriculumEvidenceMemory(input);
+  }
+
+  try {
+    const evidence = await runTeacherWriteTransaction(async (tx) => {
+      const classroom = await withTeacherWriteTimeout(
+        tx.teacherClassroom.findFirst({
+          where: {
+            id: input.classId,
+            ownerKey: input.ownerKey,
+            isArchived: false,
+          },
+          select: { id: true },
+        }),
+      );
+
+      if (!classroom) {
+        throw new Error("Class not found.");
+      }
+
+      const learner = await withTeacherWriteTimeout(
+        tx.teacherLearner.findFirst({
+          where: {
+            id: input.learnerId,
+            classId: input.classId,
+          },
+          select: { id: true },
+        }),
+      );
+
+      if (!learner) {
+        throw new Error("Learner not found.");
+      }
+
+      await withTeacherWriteTimeout(
+        tx.teacherLearnerCurriculumEvidenceHistory.create({
+          data: {
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: input.learnerId,
+            competencyId: input.competencyId,
+            rubricId: curriculumRecord.rubricId,
+            gameId: curriculumRecord.gameId ?? null,
+            note: input.note ?? null,
+            rubricLevelOverride: input.rubricLevelOverride ?? null,
+            supportLevelOverride: input.supportLevelOverride ?? null,
+            countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+            skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+            matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+            neededPrompts: input.neededPrompts ?? false,
+          },
+        }),
+      );
+
+      return withTeacherWriteTimeout(
+        tx.teacherLearnerCurriculumEvidence.upsert({
+          where: {
+            ownerKey_learnerId_competencyId: {
+              ownerKey: input.ownerKey,
+              learnerId: input.learnerId,
+              competencyId: input.competencyId,
+            },
+          },
+          update: {
+            classId: input.classId,
+            rubricId: curriculumRecord.rubricId,
+            gameId: curriculumRecord.gameId ?? null,
+            note: input.note ?? null,
+            rubricLevelOverride: input.rubricLevelOverride ?? null,
+            supportLevelOverride: input.supportLevelOverride ?? null,
+            countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+            skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+            matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+            neededPrompts: input.neededPrompts ?? false,
+          },
+          create: {
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: input.learnerId,
+            competencyId: input.competencyId,
+            rubricId: curriculumRecord.rubricId,
+            gameId: curriculumRecord.gameId ?? null,
+            note: input.note ?? null,
+            rubricLevelOverride: input.rubricLevelOverride ?? null,
+            supportLevelOverride: input.supportLevelOverride ?? null,
+            countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+            skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+            matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+            neededPrompts: input.neededPrompts ?? false,
+          },
+          select: {
+            note: true,
+            rubricLevelOverride: true,
+            supportLevelOverride: true,
+            countedEachObjectOnce: true,
+            skippedDoubleCounted: true,
+            matchedNumeralCorrectly: true,
+            neededPrompts: true,
+            updatedAt: true,
+          },
+        }),
+      );
+    });
+
+    invalidateWorkspaceSnapshotCache(input.ownerKey);
+    return {
+      note: evidence.note ?? null,
+      rubricLevelOverride:
+        (evidence.rubricLevelOverride as MathCurriculumRubricLevel | null) ?? null,
+      supportLevelOverride:
+        (evidence.supportLevelOverride as MathCurriculumSupportLevel | null) ?? null,
+      countedEachObjectOnce: evidence.countedEachObjectOnce,
+      skippedDoubleCounted: evidence.skippedDoubleCounted,
+      matchedNumeralCorrectly: evidence.matchedNumeralCorrectly,
+      neededPrompts: evidence.neededPrompts,
+      updatedAt: evidence.updatedAt.toISOString(),
+    };
+  } catch (error) {
+    if (
+      shouldFallbackToMemory(error) ||
+      shouldFallbackToMemoryEntityNotFound({
+        error,
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+        learnerId: input.learnerId,
+      })
+    ) {
+      return upsertTeacherLearnerCurriculumEvidenceMemory(input);
     }
     throw error;
   }

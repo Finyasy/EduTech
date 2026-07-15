@@ -118,16 +118,16 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
     courseId: "course-math",
     priority: "Core",
     sequenceIndex: 40,
-    ageBand: "8-10",
-    stickyHook: "Robot missions combine coding challenge with measurable math wins.",
+    ageBand: "5-7",
+    stickyHook: "PP1 starts with concrete objects, then builds toward PP2 and Grade 1-3 maths progression.",
     teacherUses: [
-      "Numbers and geometry extension tasks",
-      "Debugging routines for mixed-ability groups",
-      "Coding clubs and challenge periods",
+      "PP1 Term 2 curriculum review",
+      "CBC/CBE maths scope and sequence planning",
+      "Rubric-backed learner evidence checks",
     ],
-    nextMissionIds: ["course-space-signals", "course-arcade-ai"],
-    badgeLabel: "Robot Navigator",
-    themeBlend: { ai: 20, coding: 45, math: 35 },
+    nextMissionIds: [],
+    badgeLabel: "Maths Roadmap",
+    themeBlend: { ai: 5, coding: 5, math: 90 },
   },
   "course-space-signals": {
     courseId: "course-space-signals",
@@ -238,7 +238,7 @@ const COURSE_PLANS: Record<string, CourseCurriculumPlan> = {
 
 const SUBJECT_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   "subject-math": [
-    { courseId: "course-math", reason: "Math subject sessions map directly to robot coding and quantitative problem solving.", weight: 4 },
+    { courseId: "course-math", reason: "Math subject sessions map directly to the Kenya CBC/CBE maths roadmap from PP1 to Grade 3.", weight: 4 },
     { courseId: "course-arcade-ai", reason: "Arcade balancing uses rate, score, and probability maths in authentic coding tasks.", weight: 3 },
     { courseId: "course-logic", reason: "Pre-math patterns and sorting support early AI reasoning foundations.", weight: 2 },
     { courseId: "course-color-lab", reason: "Color and shape tallies support early counting and comparison fluency.", weight: 2 },
@@ -261,18 +261,18 @@ const STRAND_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
     { courseId: "course-treasure", reason: "Ordering and path steps strengthen early sequence thinking.", weight: 2 },
   ],
   "strand-numbers": [
-    { courseId: "course-math", reason: "Number fluency supports robot moves, loops, and coordinates.", weight: 4 },
+    { courseId: "course-math", reason: "Number fluency maps to PP1 counting, sequencing, missing-number, and writing evidence.", weight: 4 },
     { courseId: "course-treasure", reason: "Sequence and position practice support treasure-bot maps.", weight: 2 },
   ],
   "strand-measurement": [
     { courseId: "course-eco-sensors", reason: "Measurement strand maps to sensor readings and threshold decisions.", weight: 4 },
-    { courseId: "course-math", reason: "Measurement supports robot timing and path accuracy checks.", weight: 3 },
+    { courseId: "course-math", reason: "Measurement maps to long/short, heavy/light, capacity, and daily-routine review tasks.", weight: 3 },
     { courseId: "course-arcade-ai", reason: "Game balancing uses measured response times and score deltas.", weight: 2 },
     { courseId: "course-climate-data", reason: "Measurement vocabulary extends into climate data interpretation.", weight: 2 },
   ],
   "strand-geometry": [
     { courseId: "course-treasure", reason: "Shapes and space language align with map navigation and direction changes.", weight: 3 },
-    { courseId: "course-math", reason: "Geometry supports coordinates and robot navigation puzzles.", weight: 4 },
+    { courseId: "course-math", reason: "Geometry and space language extend the PP1 sides-of-objects foundation into lower primary.", weight: 4 },
     { courseId: "course-vision-lab", reason: "Visual features and shapes connect to image recognition discussions.", weight: 2 },
   ],
   "strand-listening-speaking": [
@@ -304,7 +304,7 @@ const ACTIVITY_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   "activity-ordering": [
     { courseId: "course-treasure", reason: "Ordering maps to step-by-step commands in treasure bot routes.", weight: 5 },
     { courseId: "course-logic", reason: "Sequence logic supports early coding and prediction tasks.", weight: 4 },
-    { courseId: "course-math", reason: "Ordering supports loop planning and robot route debugging.", weight: 3 },
+    { courseId: "course-math", reason: "Ordering supports PP1 number sequencing and daily routine sequencing.", weight: 3 },
   ],
   "activity-patterns": [
     { courseId: "course-logic", reason: "Strongest fit for repeated visual and number pattern detection.", weight: 6 },
@@ -313,35 +313,35 @@ const ACTIVITY_ALIGNMENT_RULES: Record<string, AlignmentReason[]> = {
   ],
   "activity-number-recognition": [
     { courseId: "course-treasure", reason: "Number labels and map clues support treasure-bot route reading.", weight: 4 },
-    { courseId: "course-math", reason: "Number recognition supports robot coding inputs and coordinates.", weight: 4 },
+    { courseId: "course-math", reason: "Number recognition is a core PP1-to-PP2 readiness check in the maths roadmap.", weight: 4 },
   ],
   "activity-number-sequencing": [
     { courseId: "course-treasure", reason: "Sequential number clues match route-building logic.", weight: 4 },
-    { courseId: "course-math", reason: "Number sequencing supports loop-based movement and debugging.", weight: 5 },
+    { courseId: "course-math", reason: "Number sequencing is the main bridge from concrete counting to written number work.", weight: 5 },
   ],
   "activity-number-writing": [
     { courseId: "course-treasure", reason: "Writing route numbers helps young learners own the code-map challenge.", weight: 3 },
-    { courseId: "course-math", reason: "Written number practice reinforces coordinate and variable notation.", weight: 3 },
+    { courseId: "course-math", reason: "Written number practice is tracked through modeling, tracing, joining, writing, and typing evidence.", weight: 3 },
   ],
   "activity-comparing-sizes": [
     { courseId: "course-eco-sensors", reason: "Comparing readings directly mirrors eco sensor decision thresholds.", weight: 5 },
-    { courseId: "course-math", reason: "Size comparisons support robot planning and quantitative choices.", weight: 3 },
+    { courseId: "course-math", reason: "Size comparison supports PP1 long/short and capacity progression.", weight: 3 },
   ],
   "activity-length-estimation": [
     { courseId: "course-eco-sensors", reason: "Estimation supports measurement-based environmental monitoring tasks.", weight: 4 },
-    { courseId: "course-math", reason: "Supports route distance estimation and debugging in robot labs.", weight: 4 },
+    { courseId: "course-math", reason: "Length comparison supports long/short evidence before formal measurement units.", weight: 4 },
   ],
   "activity-capacity-weight": [
     { courseId: "course-eco-sensors", reason: "Capacity and weight data fit garden monitoring decisions.", weight: 5 },
     { courseId: "course-climate-data", reason: "Measurement thinking extends into data tables and comparisons.", weight: 2 },
   ],
   "activity-sides-of-objects": [
-    { courseId: "course-math", reason: "Shape features connect directly to geometry and robot navigation tasks.", weight: 4 },
+    { courseId: "course-math", reason: "Sides of objects connect PP1 long/short comparison to lower-primary geometry readiness.", weight: 4 },
     { courseId: "course-vision-lab", reason: "Feature recognition supports computer vision discussions.", weight: 3 },
   ],
   "activity-shapes": [
     { courseId: "course-treasure", reason: "Shape clues support map puzzles and navigation games.", weight: 3 },
-    { courseId: "course-math", reason: "Shape reasoning supports geometry and coding pathways.", weight: 4 },
+    { courseId: "course-math", reason: "Shape reasoning supports the PP1-to-Grade 3 geometry and space strand.", weight: 4 },
     { courseId: "course-vision-lab", reason: "Image features and shape recognition support vision model practice.", weight: 3 },
   ],
   "activity-print-awareness": [
@@ -460,7 +460,7 @@ const FALLBACK_TITLES: Record<string, string> = {
   "course-safari": "Sound Sorting Safari",
   "course-treasure": "Treasure Bot Trail",
   "course-color-lab": "Color Quest AI Lab",
-  "course-math": "Robot Coders Math Lab",
+  "course-math": "Kenya CBC/CBE Maths Roadmap",
   "course-space-signals": "Space Signal Detectives",
   "course-eco-sensors": "Eco Sensor Builders",
   "course-arcade-ai": "Arcade AI Game Lab",

@@ -1,3 +1,5 @@
+import { PP1_COUNT_THE_SET_LEVELS } from "@/lib/curriculum/math-roadmap";
+
 export type CourseSummary = {
   id: string;
   title: string;
@@ -47,20 +49,20 @@ export const courses: CourseSummary[] = [
   },
   {
     id: "course-math",
-    title: "Robot Coders Math Lab",
+    title: "Kenya CBC/CBE Maths Roadmap",
     description:
-      "Learners use loops and variables to control robots while testing coordinates and probability.",
-    gradeLevel: "Ages 8-10",
+      "A PP1-first mathematics pathway that grows into PP2 and Grade 1-3 using Kenyan CBC/CBE strands, local materials, and observable mastery evidence.",
+    gradeLevel: "PP1 to Grade 3",
     lessonCount: 3,
-    difficulty: "Builder",
+    difficulty: "Curriculum Roadmap",
     estimatedMinutes: 45,
-    ageBand: "8-10",
-    pathwayStage: "Builder",
-    aiFocus: "Rule-based decision systems",
-    codingFocus: "Loops, variables, and debugging",
-    mathFocus: "Coordinates, fractions, and probability",
-    missionOutcome: "Build a robot path planner that avoids obstacles.",
-    sessionBlueprint: "12 min learn, 20 min build, 8 min reflect",
+    ageBand: "5-7",
+    pathwayStage: "Explorer",
+    aiFocus: "Teacher observation notes and evidence capture",
+    codingFocus: "Optional digital tracing and sequencing support",
+    mathFocus: "PP1 counting, sequencing, number writing, measurement, then PP2 and Grade 1-3 progression",
+    missionOutcome: "Review and implement a Kenyan CBC/CBE maths roadmap from PP1 to Grade 3.",
+    sessionBlueprint: "PP1 review first, then Term 1/3 merge, PP2 extension, and Grade 1-3 progression",
     imageUrl:
       "https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=1600&auto=format&fit=crop",
   },
@@ -284,26 +286,26 @@ export const lessons: LessonSummary[] = [
   {
     id: "lesson-math-1",
     courseId: "course-math",
-    title: "Coordinates for Robot Moves",
+    title: "PP1 Term 2 Curriculum Map",
     videoId: "M7lc1UVf-VE",
     order: 1,
-    notes: "Guide a robot on a grid using x-y coordinates.",
+    notes: "Review the cleaned PP1 Term 2 sequence: counting 5-9, number sequencing, number writing, long/short, heavy/light, capacity, and daily routine.",
   },
   {
     id: "lesson-math-2",
     courseId: "course-math",
-    title: "Loop Lab and Debug Time",
+    title: "PP1 Assessment And Evidence",
     videoId: "ysz5S6PUM-U",
     order: 2,
-    notes: "Use loops to repeat moves and fix logic bugs when the robot crashes.",
+    notes: "Use mastery rubrics, teacher observation, learner performance tasks, and portfolio evidence instead of oral questions alone.",
   },
   {
     id: "lesson-math-3",
     courseId: "course-math",
-    title: "Probability Power-Ups",
+    title: "PP1 To Grade 3 Progression",
     videoId: "aqz-KE-bpKQ",
     order: 3,
-    notes: "Test random events and tune your robot to make better choices.",
+    notes: "Extend PP1 into PP2, then Grade 1-3 numbers, measurement, geometry, and data/algebra readiness.",
   },
   {
     id: "lesson-story-1",
@@ -579,6 +581,13 @@ export const games: GameSummary[] = [
     description: "Solve the pattern to unlock the next level.",
     levelCount: 3,
   },
+  {
+    id: "game-pp1-count-sets",
+    title: "PP1 Count The Set",
+    description:
+      "Practice the PP1 Term 2 counting slice by matching object sets from 5 to 9 with the correct numeral.",
+    levelCount: 5,
+  },
 ];
 
 export const gameLevels: GameLevelSummary[] = [
@@ -612,6 +621,16 @@ export const gameLevels: GameLevelSummary[] = [
       answer: "Square",
     },
   },
+  ...PP1_COUNT_THE_SET_LEVELS.map((level) => ({
+    id: level.id,
+    gameId: "game-pp1-count-sets",
+    levelNumber: level.levelNumber,
+    configJson: {
+      prompt: level.prompt,
+      choices: level.choices,
+      answer: level.answer,
+    },
+  })),
 ];
 
 export const getGameLevels = (gameId: string) =>

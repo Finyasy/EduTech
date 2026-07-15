@@ -646,6 +646,66 @@ describe("teacher workspace snapshot cache", () => {
     ).rejects.toThrow("Only learner accounts can be linked to a classroom.");
   });
 
+  it("stores teacher curriculum evidence in memory when the persistent store is unavailable", async () => {
+    delete process.env.DATABASE_URL;
+    const {
+      addTeacherClassroom,
+      addTeacherLearner,
+      getTeacherLearnerCurriculumEvidence,
+      listTeacherLearnerCurriculumEvidenceHistory,
+      upsertTeacherLearnerCurriculumEvidence,
+    } = await import("@/lib/server/teacher-store");
+
+    const classroom = await addTeacherClassroom("teacher_1", {
+      name: "Math Evidence",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+    const learner = await addTeacherLearner("teacher_1", classroom.id, {
+      name: "Asha",
+    });
+
+    const saved = await upsertTeacherLearnerCurriculumEvidence({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      learnerId: learner.id,
+      competencyId: "pp1-counting-5-9",
+      note: "Needed one prompt on quantity 8.",
+      rubricLevelOverride: "APPROACHES_EXPECTATION",
+      supportLevelOverride: "PROMPTS",
+      countedEachObjectOnce: false,
+      skippedDoubleCounted: true,
+      matchedNumeralCorrectly: false,
+      neededPrompts: true,
+    });
+
+    const loaded = await getTeacherLearnerCurriculumEvidence({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      learnerId: learner.id,
+      competencyId: "pp1-counting-5-9",
+    });
+    const history = await listTeacherLearnerCurriculumEvidenceHistory({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      learnerId: learner.id,
+      competencyId: "pp1-counting-5-9",
+    });
+
+    expect(saved.rubricLevelOverride).toBe("APPROACHES_EXPECTATION");
+    expect(loaded).toEqual(saved);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toEqual(
+      expect.objectContaining({
+        note: "Needed one prompt on quantity 8.",
+        recordedAt: expect.any(String),
+      }),
+    );
+  });
+
   it("falls back to memory quickly when learner session updates stall in Prisma", async () => {
     delete process.env.DATABASE_URL;
     const {

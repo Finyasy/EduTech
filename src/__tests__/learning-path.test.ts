@@ -21,9 +21,9 @@ const catalog = [
   },
   {
     id: "course-math",
-    title: "Robot Coders Math Lab",
-    ageBand: "8-10" as const,
-    pathwayStage: "Builder" as const,
+    title: "Kenya CBC/CBE Maths Roadmap",
+    ageBand: "5-7" as const,
+    pathwayStage: "Explorer" as const,
   },
   {
     id: "course-story",
@@ -66,7 +66,7 @@ describe("learning-path curriculum helpers", () => {
       streakDays: 1,
       continueWatching: {
         courseId: "course-math",
-        courseTitle: "Robot Coders Math Lab",
+        courseTitle: "Kenya CBC/CBE Maths Roadmap",
         href: "/courses/course-math/lessons/lesson-math-1",
       },
     });

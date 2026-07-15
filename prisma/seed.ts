@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { PP1_COUNT_THE_SET_LEVELS } from "../src/lib/curriculum/math-roadmap";
 
 const connectionCandidates = [
   process.env.MIGRATE_DATABASE_URL ??
@@ -156,64 +157,182 @@ async function seedDatabase(prisma: PrismaClient) {
     },
   });
 
+  await prisma.game.upsert({
+    where: { id: "game-pp1-count-sets" },
+    update: {
+      title: "PP1 Count The Set",
+      description:
+        "Practice the PP1 Term 2 counting slice by matching object sets from 5 to 9 with the correct numeral.",
+      isPublished: true,
+    },
+    create: {
+      id: "game-pp1-count-sets",
+      title: "PP1 Count The Set",
+      description:
+        "Practice the PP1 Term 2 counting slice by matching object sets from 5 to 9 with the correct numeral.",
+      isPublished: true,
+      levels: {
+        create: PP1_COUNT_THE_SET_LEVELS.map((level) => ({
+          id: level.id,
+          levelNumber: level.levelNumber,
+          configJson: {
+            prompt: level.prompt,
+            choices: level.choices,
+            answer: level.answer,
+          },
+        })),
+      },
+    },
+  });
+
+  const pp1CountSetLevels = PP1_COUNT_THE_SET_LEVELS.map((level) => ({
+    id: level.id,
+    levelNumber: level.levelNumber,
+    configJson: {
+      prompt: level.prompt,
+      choices: level.choices,
+      answer: level.answer,
+    },
+  }));
+
+  for (const level of pp1CountSetLevels) {
+    await prisma.gameLevel.upsert({
+      where: { id: level.id },
+      update: {
+        gameId: "game-pp1-count-sets",
+        levelNumber: level.levelNumber,
+        configJson: level.configJson,
+      },
+      create: {
+        id: level.id,
+        gameId: "game-pp1-count-sets",
+        levelNumber: level.levelNumber,
+        configJson: level.configJson,
+      },
+    });
+  }
+
   await prisma.course.upsert({
     where: { id: "course-math" },
     update: {
-      title: "Robot Coders Math Lab",
+      title: "Kenya CBC/CBE Maths Roadmap",
       description:
-        "Learners use loops and variables to control robots while testing coordinates and probability.",
-      gradeLevel: "Ages 8-10",
-      ageBand: "8-10",
-      pathwayStage: "Builder",
-      aiFocus: "Rule-based decision systems",
-      codingFocus: "Loops, variables, and debugging",
-      mathFocus: "Coordinates, fractions, and probability",
-      missionOutcome: "Build a robot path planner that avoids obstacles.",
-      sessionBlueprint: "12 min learn, 20 min build, 8 min reflect",
+        "A PP1-first mathematics pathway that grows into PP2 and Grade 1-3 using Kenyan CBC/CBE strands, local materials, and observable mastery evidence.",
+      gradeLevel: "PP1 to Grade 3",
+      ageBand: "5-7",
+      pathwayStage: "Explorer",
+      aiFocus: "Teacher observation notes and evidence capture",
+      codingFocus: "Optional digital tracing and sequencing support",
+      mathFocus: "PP1 counting, sequencing, number writing, measurement, then PP2 and Grade 1-3 progression",
+      missionOutcome: "Review and implement a Kenyan CBC/CBE maths roadmap from PP1 to Grade 3.",
+      sessionBlueprint: "PP1 review first, then Term 1/3 merge, PP2 extension, and Grade 1-3 progression",
       isPublished: true,
     },
     create: {
       id: "course-math",
-      title: "Robot Coders Math Lab",
+      title: "Kenya CBC/CBE Maths Roadmap",
       description:
-        "Learners use loops and variables to control robots while testing coordinates and probability.",
-      gradeLevel: "Ages 8-10",
-      ageBand: "8-10",
-      pathwayStage: "Builder",
-      aiFocus: "Rule-based decision systems",
-      codingFocus: "Loops, variables, and debugging",
-      mathFocus: "Coordinates, fractions, and probability",
-      missionOutcome: "Build a robot path planner that avoids obstacles.",
-      sessionBlueprint: "12 min learn, 20 min build, 8 min reflect",
+        "A PP1-first mathematics pathway that grows into PP2 and Grade 1-3 using Kenyan CBC/CBE strands, local materials, and observable mastery evidence.",
+      gradeLevel: "PP1 to Grade 3",
+      ageBand: "5-7",
+      pathwayStage: "Explorer",
+      aiFocus: "Teacher observation notes and evidence capture",
+      codingFocus: "Optional digital tracing and sequencing support",
+      mathFocus: "PP1 counting, sequencing, number writing, measurement, then PP2 and Grade 1-3 progression",
+      missionOutcome: "Review and implement a Kenyan CBC/CBE maths roadmap from PP1 to Grade 3.",
+      sessionBlueprint: "PP1 review first, then Term 1/3 merge, PP2 extension, and Grade 1-3 progression",
       isPublished: true,
       lessons: {
         create: [
           {
             id: "lesson-math-1",
-            title: "Coordinates for Robot Moves",
+            title: "PP1 Term 2 Curriculum Map",
             videoId: "M7lc1UVf-VE",
             order: 1,
-            notes: "Guide a robot on a grid using x-y coordinates.",
+            notes: "Review the cleaned PP1 Term 2 sequence: counting 5-9, number sequencing, number writing, long/short, heavy/light, capacity, and daily routine.",
             isPublished: true,
           },
           {
             id: "lesson-math-2",
-            title: "Loop Lab and Debug Time",
+            title: "PP1 Assessment And Evidence",
             videoId: "ysz5S6PUM-U",
             order: 2,
-            notes: "Use loops to repeat moves and fix logic bugs when the robot crashes.",
+            notes: "Use mastery rubrics, teacher observation, learner performance tasks, and portfolio evidence instead of oral questions alone.",
             isPublished: true,
           },
           {
             id: "lesson-math-3",
-            title: "Probability Power-Ups",
+            title: "PP1 To Grade 3 Progression",
             videoId: "aqz-KE-bpKQ",
             order: 3,
-            notes: "Test random events and tune your robot to make better choices.",
+            notes: "Extend PP1 into PP2, then Grade 1-3 numbers, measurement, geometry, and data/algebra readiness.",
             isPublished: true,
           },
         ],
       },
+    },
+  });
+
+  await prisma.lesson.upsert({
+    where: { id: "lesson-math-1" },
+    update: {
+      title: "PP1 Term 2 Curriculum Map",
+      order: 1,
+      notes:
+        "Review the cleaned PP1 Term 2 sequence: counting 5-9, number sequencing, number writing, long/short, heavy/light, capacity, and daily routine.",
+      isPublished: true,
+    },
+    create: {
+      id: "lesson-math-1",
+      courseId: "course-math",
+      title: "PP1 Term 2 Curriculum Map",
+      videoId: "M7lc1UVf-VE",
+      order: 1,
+      notes:
+        "Review the cleaned PP1 Term 2 sequence: counting 5-9, number sequencing, number writing, long/short, heavy/light, capacity, and daily routine.",
+      isPublished: true,
+    },
+  });
+
+  await prisma.lesson.upsert({
+    where: { id: "lesson-math-2" },
+    update: {
+      title: "PP1 Assessment And Evidence",
+      order: 2,
+      notes:
+        "Use mastery rubrics, teacher observation, learner performance tasks, and portfolio evidence instead of oral questions alone.",
+      isPublished: true,
+    },
+    create: {
+      id: "lesson-math-2",
+      courseId: "course-math",
+      title: "PP1 Assessment And Evidence",
+      videoId: "ysz5S6PUM-U",
+      order: 2,
+      notes:
+        "Use mastery rubrics, teacher observation, learner performance tasks, and portfolio evidence instead of oral questions alone.",
+      isPublished: true,
+    },
+  });
+
+  await prisma.lesson.upsert({
+    where: { id: "lesson-math-3" },
+    update: {
+      title: "PP1 To Grade 3 Progression",
+      order: 3,
+      notes:
+        "Extend PP1 into PP2, then Grade 1-3 numbers, measurement, geometry, and data/algebra readiness.",
+      isPublished: true,
+    },
+    create: {
+      id: "lesson-math-3",
+      courseId: "course-math",
+      title: "PP1 To Grade 3 Progression",
+      videoId: "aqz-KE-bpKQ",
+      order: 3,
+      notes:
+        "Extend PP1 into PP2, then Grade 1-3 numbers, measurement, geometry, and data/algebra readiness.",
+      isPublished: true,
     },
   });
 

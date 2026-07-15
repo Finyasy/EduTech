@@ -2,6 +2,14 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { Prisma } from "@prisma/client";
 import {
+  buildMathCurriculumEvidenceSummary,
+  type MathCurriculumEvidenceSummary,
+  type MathCurriculumTeacherJudgement,
+  type MathCurriculumTeacherJudgementHistoryEntry,
+  getMathCurriculumRecordById,
+  listMathCurriculumRecordsWithGames,
+} from "@/lib/curriculum/math-roadmap";
+import {
   clearScopeDegraded,
   isScopeDegraded,
   markScopeDegraded,
@@ -16,6 +24,11 @@ import {
   getGame as getMockGame,
   getGameLevels as getMockGameLevels,
 } from "@/lib/server/mock-data";
+import {
+  getTeacherLearnerCurriculumEvidence,
+  getTeacherWorkspaceSnapshot,
+  listTeacherLearnerCurriculumEvidenceHistory,
+} from "@/lib/server/teacher-store";
 
 export type CourseOverview = {
   id: string;
@@ -940,6 +953,18 @@ export type TeacherLearnerDashboardSummary = {
     reviewedCount: number;
     recent: LearnerArtifactSummary[];
   };
+  curriculumEvidence: MathCurriculumEvidenceSummary[];
+};
+
+export type TeacherClassCurriculumEvidenceItem = {
+  learner: {
+    id: string;
+    classId: string;
+    userId: string | null;
+    name: string;
+    linkedAccount: boolean;
+  };
+  evidence: MathCurriculumEvidenceSummary;
 };
 
 const fallbackDashboardStats = (): DashboardStats => ({
@@ -1325,6 +1350,28 @@ export async function listRecentLearnerArtifactsForClass(
   return listRecentLearnerArtifacts(limit, { userIds });
 }
 
+const buildTeacherCurriculumEvidenceSummary = (input: {
+  competencyId: string;
+  attempts: Array<{
+    gameLevelId: string;
+    score: number;
+    timeMs: number;
+    submittedAt: string;
+  }>;
+  bestScore: number | null;
+  bestTimeMs: number | null;
+  teacherJudgement: MathCurriculumTeacherJudgement | null;
+  teacherJudgementHistory: MathCurriculumTeacherJudgementHistoryEntry[];
+}) =>
+  buildMathCurriculumEvidenceSummary({
+    competencyId: input.competencyId,
+    attempts: input.attempts,
+    bestScore: input.bestScore,
+    bestTimeMs: input.bestTimeMs,
+    teacherJudgement: input.teacherJudgement,
+    teacherJudgementHistory: input.teacherJudgementHistory,
+  });
+
 export async function getTeacherLearnerDashboardSummary(input: {
   ownerKey: string;
   classId: string;
@@ -1356,7 +1403,45 @@ export async function getTeacherLearnerDashboardSummary(input: {
     return null;
   }
 
+  const dashboardCurriculumRecords = listMathCurriculumRecordsWithGames();
+  const dashboardGameIds = dashboardCurriculumRecords
+    .map((record) => record.gameId)
+    .filter((gameId): gameId is string => Boolean(gameId));
+
+  const loadTeacherJudgementState = async (competencyId: string) => {
+    const [teacherJudgement, teacherJudgementHistory] = await Promise.all([
+      getTeacherLearnerCurriculumEvidence({
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+        learnerId: input.learnerId,
+        competencyId,
+      }),
+      listTeacherLearnerCurriculumEvidenceHistory({
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+        learnerId: input.learnerId,
+        competencyId,
+        limit: 5,
+      }),
+    ]);
+
+    return {
+      competencyId,
+      teacherJudgement,
+      teacherJudgementHistory,
+    };
+  };
+
   if (!learner.userId) {
+    const teacherJudgementState = await Promise.all(
+      dashboardCurriculumRecords.map((record) => loadTeacherJudgementState(record.id)),
+    );
+    const teacherJudgementByCompetency = new Map(
+      teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgement]),
+    );
+    const teacherJudgementHistoryByCompetency = new Map(
+      teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgementHistory]),
+    );
     return {
       learner: {
         id: learner.id,
@@ -1383,21 +1468,38 @@ export async function getTeacherLearnerDashboardSummary(input: {
         reviewedCount: 0,
         recent: [],
       },
+      curriculumEvidence: dashboardCurriculumRecords.map((record) =>
+        buildTeacherCurriculumEvidenceSummary({
+          competencyId: record.id,
+          attempts: [],
+          bestScore: null,
+          bestTimeMs: null,
+          teacherJudgement: teacherJudgementByCompetency.get(record.id) ?? null,
+          teacherJudgementHistory:
+            teacherJudgementHistoryByCompetency.get(record.id) ?? [],
+        }),
+      ),
     };
   }
 
   const userId = learner.userId;
   const [
+    teacherJudgementState,
     dashboard,
     quizAggregate,
     latestQuizAttempt,
     gameAttemptCount,
     latestGameAttempt,
     gameBestAggregate,
+    curriculumAttempts,
+    curriculumBestRows,
     artifactTotalCount,
     artifactReviewedCount,
     recentArtifacts,
   ] = await Promise.all([
+    Promise.all(
+      dashboardCurriculumRecords.map((record) => loadTeacherJudgementState(record.id)),
+    ),
     withSharedDataQueryTimeout(
       getDashboardStats(userId),
       "teacher-learner-summary-dashboard",
@@ -1440,6 +1542,41 @@ export async function getTeacherLearnerDashboardSummary(input: {
       }),
       "teacher-learner-summary-game-best-aggregate",
     ),
+    dashboardGameIds.length === 0
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameAttempt.findMany({
+            where: {
+              userId,
+              level: { gameId: { in: dashboardGameIds } },
+            },
+            orderBy: { submittedAt: "desc" },
+            select: {
+              gameLevelId: true,
+              score: true,
+              timeMs: true,
+              submittedAt: true,
+              level: {
+                select: {
+                  gameId: true,
+                },
+              },
+            },
+          }),
+          "teacher-learner-summary-curriculum-attempts",
+        ),
+    dashboardGameIds.length === 0
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameBest.findMany({
+            where: {
+              userId,
+              gameId: { in: dashboardGameIds },
+            },
+            select: { gameId: true, bestScore: true, bestTimeMs: true },
+          }),
+          "teacher-learner-summary-curriculum-best",
+        ),
     withSharedDataQueryTimeout(
       prisma.learnerArtifact.count({
         where: { userId },
@@ -1454,6 +1591,33 @@ export async function getTeacherLearnerDashboardSummary(input: {
     ),
     listRecentLearnerArtifacts(5, { userIds: [userId] }),
   ]);
+
+  const teacherJudgementByCompetency = new Map(
+    teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgement]),
+  );
+  const teacherJudgementHistoryByCompetency = new Map(
+    teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgementHistory]),
+  );
+  const attemptsByGameId = new Map<
+    string,
+    Array<{ gameLevelId: string; score: number; timeMs: number; submittedAt: string }>
+  >();
+  for (const attempt of curriculumAttempts) {
+    const rows = attemptsByGameId.get(attempt.level.gameId) ?? [];
+    rows.push({
+      gameLevelId: attempt.gameLevelId,
+      score: attempt.score,
+      timeMs: attempt.timeMs,
+      submittedAt: attempt.submittedAt.toISOString(),
+    });
+    attemptsByGameId.set(attempt.level.gameId, rows);
+  }
+  const bestByGameId = new Map(
+    curriculumBestRows.map((row) => [
+      row.gameId,
+      { bestScore: row.bestScore, bestTimeMs: row.bestTimeMs },
+    ]),
+  );
 
   return {
     learner: {
@@ -1484,5 +1648,285 @@ export async function getTeacherLearnerDashboardSummary(input: {
       reviewedCount: artifactReviewedCount,
       recent: recentArtifacts,
     },
+    curriculumEvidence: dashboardCurriculumRecords.map((record) =>
+      buildTeacherCurriculumEvidenceSummary({
+        competencyId: record.id,
+        attempts: record.gameId ? attemptsByGameId.get(record.gameId) ?? [] : [],
+        bestScore: record.gameId ? bestByGameId.get(record.gameId)?.bestScore ?? null : null,
+        bestTimeMs: record.gameId ? bestByGameId.get(record.gameId)?.bestTimeMs ?? null : null,
+        teacherJudgement: teacherJudgementByCompetency.get(record.id) ?? null,
+        teacherJudgementHistory:
+          teacherJudgementHistoryByCompetency.get(record.id) ?? [],
+      }),
+    ),
   };
+}
+
+export async function listTeacherClassCurriculumEvidence(input: {
+  ownerKey: string;
+  classId: string;
+  competencyId: string;
+}): Promise<TeacherClassCurriculumEvidenceItem[]> {
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  if (!hasDatabase()) {
+    const snapshot = await getTeacherWorkspaceSnapshot(
+      { ownerKey: input.ownerKey, classId: input.classId },
+      { detailLevel: "core" },
+    );
+    if (!snapshot.classes.some((classroom) => classroom.id === input.classId && !classroom.isArchived)) {
+      return [];
+    }
+
+    const learners = snapshot.learners.filter((learner) => learner.classId === input.classId);
+    return Promise.all(
+      learners.map(async (learner) => {
+        const [teacherJudgement, teacherJudgementHistory] = await Promise.all([
+          getTeacherLearnerCurriculumEvidence({
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: learner.id,
+            competencyId: input.competencyId,
+          }),
+          listTeacherLearnerCurriculumEvidenceHistory({
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: learner.id,
+            competencyId: input.competencyId,
+            limit: 5,
+          }),
+        ]);
+
+        return {
+          learner: {
+            id: learner.id,
+            classId: learner.classId,
+            userId: learner.userId,
+            name: learner.name,
+            linkedAccount: Boolean(learner.userId),
+          },
+          evidence: buildTeacherCurriculumEvidenceSummary({
+            competencyId: input.competencyId,
+            attempts: [],
+            bestScore: null,
+            bestTimeMs: null,
+            teacherJudgement,
+            teacherJudgementHistory,
+          }),
+        };
+      }),
+    );
+  }
+
+  const prisma = getPrisma()!;
+  const learners = await withSharedDataQueryTimeout(
+    prisma.teacherLearner.findMany({
+      where: {
+        classId: input.classId,
+        classroom: { ownerKey: input.ownerKey, isArchived: false },
+      },
+      select: {
+        id: true,
+        classId: true,
+        userId: true,
+        name: true,
+      },
+      orderBy: { name: "asc" },
+    }),
+    "teacher-class-curriculum-evidence-learners",
+  );
+
+  if (learners.length === 0) {
+    return [];
+  }
+
+  const userIds = learners
+    .map((learner) => learner.userId)
+    .filter((userId): userId is string => Boolean(userId));
+  const learnerIds = learners.map((learner) => learner.id);
+
+  const [
+    currentJudgements,
+    historyRows,
+    attempts,
+    bestRows,
+  ] = await Promise.all([
+    withSharedDataQueryTimeout(
+      prisma.teacherLearnerCurriculumEvidence.findMany({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          competencyId: input.competencyId,
+          learnerId: { in: learnerIds },
+        },
+        select: {
+          learnerId: true,
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          updatedAt: true,
+        },
+      }),
+      "teacher-class-curriculum-evidence-current",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.teacherLearnerCurriculumEvidenceHistory.findMany({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          competencyId: input.competencyId,
+          learnerId: { in: learnerIds },
+        },
+        orderBy: { recordedAt: "desc" },
+        select: {
+          learnerId: true,
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          recordedAt: true,
+        },
+      }),
+      "teacher-class-curriculum-evidence-history",
+    ),
+    userIds.length === 0 || !curriculumRecord.gameId
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameAttempt.findMany({
+            where: {
+              userId: { in: userIds },
+              level: { gameId: curriculumRecord.gameId },
+            },
+            orderBy: { submittedAt: "desc" },
+            select: {
+              userId: true,
+              gameLevelId: true,
+              score: true,
+              timeMs: true,
+              submittedAt: true,
+            },
+          }),
+          "teacher-class-curriculum-evidence-attempts",
+        ),
+    userIds.length === 0 || !curriculumRecord.gameId
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameBest.findMany({
+            where: {
+              userId: { in: userIds },
+              gameId: curriculumRecord.gameId,
+            },
+            select: {
+              userId: true,
+              bestScore: true,
+              bestTimeMs: true,
+            },
+          }),
+          "teacher-class-curriculum-evidence-best",
+        ),
+  ]);
+
+  const learnerByUserId = new Map(
+    learners
+      .filter((learner) => learner.userId)
+      .map((learner) => [learner.userId as string, learner]),
+  );
+  const judgementByLearnerId = new Map(
+    currentJudgements.map((judgement) => [
+      judgement.learnerId,
+      {
+        note: judgement.note ?? null,
+        rubricLevelOverride:
+          (judgement.rubricLevelOverride as MathCurriculumTeacherJudgement["rubricLevelOverride"]) ??
+          null,
+        supportLevelOverride:
+          (judgement.supportLevelOverride as MathCurriculumTeacherJudgement["supportLevelOverride"]) ??
+          null,
+        countedEachObjectOnce: judgement.countedEachObjectOnce,
+        skippedDoubleCounted: judgement.skippedDoubleCounted,
+        matchedNumeralCorrectly: judgement.matchedNumeralCorrectly,
+        neededPrompts: judgement.neededPrompts,
+        updatedAt: judgement.updatedAt.toISOString(),
+      } satisfies MathCurriculumTeacherJudgement,
+    ]),
+  );
+  const historyByLearnerId = new Map<string, MathCurriculumTeacherJudgementHistoryEntry[]>();
+  for (const row of historyRows) {
+    const entries = historyByLearnerId.get(row.learnerId) ?? [];
+    if (entries.length < 5) {
+      entries.push({
+        note: row.note ?? null,
+        rubricLevelOverride:
+          (row.rubricLevelOverride as MathCurriculumTeacherJudgement["rubricLevelOverride"]) ??
+          null,
+        supportLevelOverride:
+          (row.supportLevelOverride as MathCurriculumTeacherJudgement["supportLevelOverride"]) ??
+          null,
+        countedEachObjectOnce: row.countedEachObjectOnce,
+        skippedDoubleCounted: row.skippedDoubleCounted,
+        matchedNumeralCorrectly: row.matchedNumeralCorrectly,
+        neededPrompts: row.neededPrompts,
+        updatedAt: row.recordedAt.toISOString(),
+        recordedAt: row.recordedAt.toISOString(),
+      });
+      historyByLearnerId.set(row.learnerId, entries);
+    }
+  }
+  const attemptsByLearnerId = new Map<
+    string,
+    Array<{ gameLevelId: string; score: number; timeMs: number; submittedAt: string }>
+  >();
+  for (const attempt of attempts) {
+    const learner = learnerByUserId.get(attempt.userId);
+    if (!learner) {
+      continue;
+    }
+    const rows = attemptsByLearnerId.get(learner.id) ?? [];
+    rows.push({
+      gameLevelId: attempt.gameLevelId,
+      score: attempt.score,
+      timeMs: attempt.timeMs,
+      submittedAt: attempt.submittedAt.toISOString(),
+    });
+    attemptsByLearnerId.set(learner.id, rows);
+  }
+  const bestByLearnerId = new Map<string, { bestScore: number | null; bestTimeMs: number | null }>();
+  for (const best of bestRows) {
+    const learner = learnerByUserId.get(best.userId);
+    if (!learner) {
+      continue;
+    }
+    bestByLearnerId.set(learner.id, {
+      bestScore: best.bestScore,
+      bestTimeMs: best.bestTimeMs,
+    });
+  }
+
+  return learners.map((learner) => ({
+    learner: {
+      id: learner.id,
+      classId: learner.classId,
+      userId: learner.userId,
+      name: learner.name,
+      linkedAccount: Boolean(learner.userId),
+    },
+    evidence: buildTeacherCurriculumEvidenceSummary({
+      competencyId: input.competencyId,
+      attempts: attemptsByLearnerId.get(learner.id) ?? [],
+      bestScore: bestByLearnerId.get(learner.id)?.bestScore ?? null,
+      bestTimeMs: bestByLearnerId.get(learner.id)?.bestTimeMs ?? null,
+      teacherJudgement: judgementByLearnerId.get(learner.id) ?? null,
+      teacherJudgementHistory: historyByLearnerId.get(learner.id) ?? [],
+    }),
+  }));
 }

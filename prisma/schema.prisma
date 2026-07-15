@@ -255,6 +255,8 @@ model TeacherClassroom {
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   learners      TeacherLearner[]
+  curriculumEvidence TeacherLearnerCurriculumEvidence[]
+  curriculumEvidenceHistory TeacherLearnerCurriculumEvidenceHistory[]
   sessionStatus TeacherSessionStatus[]
   assignments   TeacherMissionAssignment[]
 
@@ -272,10 +274,60 @@ model TeacherLearner {
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   classroom     TeacherClassroom     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  curriculumEvidence TeacherLearnerCurriculumEvidence[]
+  curriculumEvidenceHistory TeacherLearnerCurriculumEvidenceHistory[]
   sessionStatus TeacherSessionStatus[]
 
   @@index([classId])
   @@index([userId])
+}
+
+model TeacherLearnerCurriculumEvidence {
+  id                        String   @id @default(cuid())
+  ownerKey                  String
+  classId                   String
+  learnerId                 String
+  competencyId              String
+  rubricId                  String
+  gameId                    String?
+  note                      String?
+  rubricLevelOverride       String?
+  supportLevelOverride      String?
+  countedEachObjectOnce     Boolean  @default(false)
+  skippedDoubleCounted      Boolean  @default(false)
+  matchedNumeralCorrectly   Boolean  @default(false)
+  neededPrompts             Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  classroom                 TeacherClassroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  learner                   TeacherLearner   @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerKey, learnerId, competencyId])
+  @@index([ownerKey, classId])
+  @@index([learnerId, competencyId])
+}
+
+model TeacherLearnerCurriculumEvidenceHistory {
+  id                      String   @id @default(cuid())
+  ownerKey                String
+  classId                 String
+  learnerId               String
+  competencyId            String
+  rubricId                String
+  gameId                  String?
+  note                    String?
+  rubricLevelOverride     String?
+  supportLevelOverride    String?
+  countedEachObjectOnce   Boolean  @default(false)
+  skippedDoubleCounted    Boolean  @default(false)
+  matchedNumeralCorrectly Boolean  @default(false)
+  neededPrompts           Boolean  @default(false)
+  recordedAt              DateTime @default(now())
+  classroom               TeacherClassroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  learner                 TeacherLearner   @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerKey, classId, competencyId, recordedAt])
+  @@index([learnerId, competencyId, recordedAt])
 }
 
 model TeacherSessionStatus {
