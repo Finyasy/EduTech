@@ -67,6 +67,13 @@ export type QuizQuestionDetail = {
   explanation: string | null;
 };
 
+// Learner-facing shape: must never include `answer` or `explanation`, because
+// these objects are serialized into the client payload of the quiz page.
+export type QuizQuestionForLearner = Omit<
+  QuizQuestionDetail,
+  "answer" | "explanation"
+>;
+
 const hasDatabase = () =>
   Boolean(process.env.DATABASE_URL && getPrisma());
 
@@ -1180,7 +1187,7 @@ export const getDashboardStats = (userId: string) =>
 
 export async function listQuizQuestions(
   lessonId: string,
-): Promise<QuizQuestionDetail[]> {
+): Promise<QuizQuestionForLearner[]> {
   if (!hasDatabase()) {
     const fallbackQuestion =
       lessonId === "lesson-logic-1"
@@ -1191,8 +1198,6 @@ export async function listQuizQuestions(
               type: "MULTIPLE_CHOICE" as const,
               question: "Which shape completes the pattern?",
               options: ["Triangle", "Square", "Circle"],
-              answer: "Square",
-              explanation: "The pattern alternates triangle and square.",
             },
           ]
         : [];
@@ -1205,6 +1210,13 @@ export async function listQuizQuestions(
     prisma.quizQuestion.findMany({
       where: { lessonId },
       orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        lessonId: true,
+        type: true,
+        question: true,
+        options: true,
+      },
     }),
     "quiz-questions",
   );
@@ -1217,8 +1229,6 @@ export async function listQuizQuestions(
     options: Array.isArray(question.options)
       ? (question.options as string[])
       : null,
-    answer: question.answer,
-    explanation: question.explanation ?? null,
   }));
 }
 

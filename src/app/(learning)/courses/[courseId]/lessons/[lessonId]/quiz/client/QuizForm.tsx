@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { QuizQuestionDetail } from "@/lib/server/data";
+import type { QuizQuestionForLearner } from "@/lib/server/data";
 
 type QuizFormProps = {
   lessonId: string;
-  questions: QuizQuestionDetail[];
+  questions: QuizQuestionForLearner[];
 };
 
 type AnswerState = Record<string, string>;
