@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 
 export type ParsedJsonBody<T> =
   | { ok: true; data: T }
@@ -82,6 +83,11 @@ export function toDatabaseFailureResponse(
     errorName,
     errorCode: errorCode || undefined,
     ...metadata,
+  });
+
+  Sentry.captureException(error, {
+    tags: { context, timeout: String(isTimeout) },
+    extra: { errorCode: errorCode || undefined, ...metadata },
   });
 
   return NextResponse.json(

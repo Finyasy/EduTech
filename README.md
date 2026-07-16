@@ -60,6 +60,9 @@ ADMIN_EMAILS="admin@example.com,other@example.com"
 
 # Comma-separated list of teacher emails
 TEACHER_EMAILS="teacher@example.com,other-teacher@example.com"
+
+# Optional: Sentry error tracking (disabled when unset)
+NEXT_PUBLIC_SENTRY_DSN="https://...ingest.sentry.io/..."
 ```
 
 Notes:

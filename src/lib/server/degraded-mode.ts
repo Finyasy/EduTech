@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/nextjs";
+
 type DegradedEntry = {
   until: number;
   reason: string;
@@ -54,6 +56,15 @@ export function markScopeDegraded(scope: string, reason: string, ttlMs = DEFAULT
     console.warn(
       `[degraded-mode] fallback spike detected for scope=${scope} count=${recent.length} windowMs=${FALLBACK_SPIKE_WINDOW_MS} reason=${reason}`,
     );
+    Sentry.captureMessage(`Degraded-mode fallback spike: ${scope}`, {
+      level: "warning",
+      tags: { scope },
+      extra: {
+        count: recent.length,
+        windowMs: FALLBACK_SPIKE_WINDOW_MS,
+        reason,
+      },
+    });
     lastAlertAt.set(scope, now);
   }
 }

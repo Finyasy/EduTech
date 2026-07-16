@@ -48,10 +48,16 @@
 - Watch degraded-mode logs and fallback usage after deploy (`Data may be delayed` paths).
 
 ## 5. Observability and Alerting
-- Add centralized monitoring (Sentry/Datadog/etc.) for:
-  - API errors
-  - DB timeout frequency
-  - degraded-mode spikes
+- Sentry is integrated via `@sentry/nextjs` and activates when
+  `NEXT_PUBLIC_SENTRY_DSN` is set (no-op otherwise). It captures:
+  - Unhandled server, edge, and client errors (`instrumentation.ts`,
+    `instrumentation-client.ts`, `global-error.tsx`, `error.tsx`)
+  - Database route failures (`toDatabaseFailureResponse`)
+  - Degraded-mode fallback spikes (`markScopeDegraded`)
+- Set `SENTRY_ORG`, `SENTRY_PROJECT`, and `SENTRY_AUTH_TOKEN` in CI/Vercel
+  to enable readable stack traces via source-map upload.
+- Configure Sentry alert rules for DB timeout frequency and
+  degraded-mode spike warnings.
 - Track key user journeys:
   - learner sign-in -> `/post-auth` -> `/dashboard`
   - teacher sign-in -> `/teach` and `/admin/teach`
