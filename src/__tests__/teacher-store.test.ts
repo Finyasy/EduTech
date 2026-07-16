@@ -785,3 +785,102 @@ describe("teacher workspace snapshot cache", () => {
     expect(assignment.isFallbackData).toBe(true);
   });
 });
+
+describe("teacher store production write guard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.useFakeTimers();
+    process.env.DATABASE_URL = "postgresql://local/test";
+    mutableEnv.NODE_ENV = "production";
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+    if (originalNodeEnv === undefined) {
+      delete mutableEnv.NODE_ENV;
+    } else {
+      mutableEnv.NODE_ENV = originalNodeEnv;
+    }
+  });
+
+  it("rejects stalled mission assignment writes instead of writing to memory", async () => {
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const { assignTeacherMissionToClass } = await import(
+      "@/lib/server/teacher-store"
+    );
+
+    const assignmentPromise = assignTeacherMissionToClass({
+      ownerKey: "teacher_prod",
+      classId: "class-db-1",
+      courseId: "course-logic",
+      courseTitle: "AI Pattern Detectives",
+      target: "CLASS",
+    });
+    const assertion = expect(assignmentPromise).rejects.toThrow(/timed out/);
+
+    await vi.advanceTimersByTimeAsync(1_801);
+    await assertion;
+  });
+
+  it("rejects evidence writes on database failure and keeps memory clean", async () => {
+    const unreachable = Object.assign(
+      new Error("Can't reach database server at `db.internal`"),
+      { code: "P1001" },
+    );
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockRejectedValue(unreachable),
+    });
+
+    const {
+      upsertTeacherLearnerCurriculumEvidence,
+      listTeacherLearnerCurriculumEvidenceHistory,
+    } = await import("@/lib/server/teacher-store");
+
+    await expect(
+      upsertTeacherLearnerCurriculumEvidence({
+        ownerKey: "teacher_prod",
+        classId: "class-db-1",
+        learnerId: "learner-db-1",
+        competencyId: "pp1-counting-5-9",
+        note: "Should never be stored in memory.",
+      }),
+    ).rejects.toThrow("Can't reach database server");
+
+    delete process.env.DATABASE_URL;
+    const history = await listTeacherLearnerCurriculumEvidenceHistory({
+      ownerKey: "teacher_prod",
+      classId: "class-db-1",
+      learnerId: "learner-db-1",
+      competencyId: "pp1-counting-5-9",
+    });
+    expect(history).toHaveLength(0);
+  });
+
+  it("still allows memory writes in production demo mode without a database", async () => {
+    delete process.env.DATABASE_URL;
+    getPrismaMock.mockReturnValue(null);
+
+    const { addTeacherClassroom } = await import("@/lib/server/teacher-store");
+
+    const classroom = await addTeacherClassroom("teacher_prod_demo", {
+      name: "Demo Class",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    expect(classroom.name).toBe("Demo Class");
+    expect(classroom.id).toMatch(/^class-/);
+  });
+});

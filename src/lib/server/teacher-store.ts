@@ -2155,6 +2155,14 @@ export async function getTeacherWorkspaceAssignments(
   }
 }
 
+// Writes must never land in the per-instance memory store when a persistent
+// store is configured in production: serverless instances do not share
+// memory, so a fallback write that reports success is silently lost when the
+// instance recycles. Let the error propagate so routes answer 503 instead.
+// Reads may still degrade to cached or memory data.
+const canFallbackToMemoryForWrites = () =>
+  process.env.NODE_ENV !== "production" || !hasPersistentStore();
+
 const shouldFallbackToMemory = (error: unknown) => {
   if (!error || typeof error !== "object") {
     return false;
@@ -2432,7 +2440,7 @@ export async function addTeacherClassroom(
     invalidateWorkspaceSnapshotCache(ownerKey);
     return mapped;
   } catch (error) {
-    if (shouldFallbackToMemory(error)) {
+    if (canFallbackToMemoryForWrites() && shouldFallbackToMemory(error)) {
       const classroom = addTeacherClassroomMemory(ownerKey, validated);
       invalidateWorkspaceSnapshotCache(ownerKey);
       return classroom;
@@ -2448,7 +2456,10 @@ export async function updateTeacherClassroom(
 ): Promise<TeacherClassroom> {
   const validated = validateClassUpdate(input);
 
-  if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() && isSeededMemoryClassId(ownerKey, classId))
+  ) {
     const classroom = updateTeacherClassroomMemory(ownerKey, classId, validated);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return classroom;
@@ -2485,8 +2496,9 @@ export async function updateTeacherClassroom(
     return mapped;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId }))
     ) {
       const classroom = updateTeacherClassroomMemory(ownerKey, classId, validated);
       invalidateWorkspaceSnapshotCache(ownerKey);
@@ -2501,7 +2513,10 @@ async function setClassArchivedState(
   classId: string,
   isArchived: boolean,
 ): Promise<TeacherClassroom> {
-  if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() && isSeededMemoryClassId(ownerKey, classId))
+  ) {
     const classroom = setClassArchivedStateMemory(ownerKey, classId, isArchived);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return classroom;
@@ -2538,8 +2553,9 @@ async function setClassArchivedState(
     return mapped;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId }))
     ) {
       const classroom = setClassArchivedStateMemory(ownerKey, classId, isArchived);
       invalidateWorkspaceSnapshotCache(ownerKey);
@@ -2572,7 +2588,10 @@ export async function addTeacherLearner(
     .split("")
     .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
-  if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() && isSeededMemoryClassId(ownerKey, classId))
+  ) {
     const learner = addTeacherLearnerMemory(ownerKey, classId, name);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return learner;
@@ -2620,8 +2639,9 @@ export async function addTeacherLearner(
     return mapped;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId }))
     ) {
       const learner = addTeacherLearnerMemory(ownerKey, classId, name);
       invalidateWorkspaceSnapshotCache(ownerKey);
@@ -2773,7 +2793,11 @@ export async function upsertTeacherLearnerCurriculumEvidence(
     throw new Error("Competency not found.");
   }
 
-  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() &&
+      isSeededMemoryClassId(input.ownerKey, input.classId))
+  ) {
     return upsertTeacherLearnerCurriculumEvidenceMemory(input);
   }
 
@@ -2893,13 +2917,14 @@ export async function upsertTeacherLearnerCurriculumEvidence(
     };
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({
-        error,
-        ownerKey: input.ownerKey,
-        classId: input.classId,
-        learnerId: input.learnerId,
-      })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({
+          error,
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+        }))
     ) {
       return upsertTeacherLearnerCurriculumEvidenceMemory(input);
     }
@@ -2919,7 +2944,8 @@ export async function advanceLearnerProgressStatus(input: {
 
   if (
     !hasPersistentStore() ||
-    isSeededMemoryClassId(input.ownerKey, input.classId)
+    (canFallbackToMemoryForWrites() &&
+      isSeededMemoryClassId(input.ownerKey, input.classId))
   ) {
     const status = advanceLearnerProgressStatusMemory(input);
     invalidateWorkspaceSnapshotCache(input.ownerKey);
@@ -2985,13 +3011,14 @@ export async function advanceLearnerProgressStatus(input: {
     return next;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({
-        error,
-        ownerKey: input.ownerKey,
-        classId: input.classId,
-        learnerId: input.learnerId,
-      })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({
+          error,
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+        }))
     ) {
       const status = advanceLearnerProgressStatusMemory(input);
       invalidateWorkspaceSnapshotCache(input.ownerKey);
@@ -3153,7 +3180,11 @@ export async function assignTeacherMissionToClass(input: {
   learnerIds?: string[];
   note?: string | null;
 }): Promise<TeacherMissionAssignment> {
-  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() &&
+      isSeededMemoryClassId(input.ownerKey, input.classId))
+  ) {
     const assignment = upsertTeacherMissionAssignmentMemory(input);
     invalidateWorkspaceSnapshotCache(input.ownerKey);
     return assignment;
@@ -3179,12 +3210,13 @@ export async function assignTeacherMissionToClass(input: {
     return assignment;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({
-        error,
-        ownerKey: input.ownerKey,
-        classId: input.classId,
-      })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({
+          error,
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+        }))
     ) {
       logTeacherStoreFallback("assignment-write", {
         ownerKey: input.ownerKey,
