@@ -91,7 +91,29 @@ export default function HomePage() {
                 </p>
               </div>
 
+              <div className="max-w-2xl rounded-[1.8rem] border border-amber-200/30 bg-white/8 p-5 shadow-[0_18px_46px_rgba(15,23,42,0.16)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-100/82">
+                  PP1 Term 2 Week 1
+                </p>
+                <h2
+                  className="mt-2 text-2xl font-semibold text-white"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  Counting 5-9 starts with real object sets and simple number choices.
+                </h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-white/72">
+                  Learners begin with the Kenya CBC/CBE maths roadmap, then move into the first
+                  PP1 counting game for Week 1 practice.
+                </p>
+              </div>
+
               <div className="flex flex-wrap gap-3">
+                <Link
+                  href={buildSignInRedirectUrl("/courses/course-math")}
+                  className="inline-flex min-h-12 items-center rounded-full bg-amber-300 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_16px_40px_rgba(252,211,77,0.22)] transition hover:-translate-y-0.5"
+                >
+                  Try PP1 maths
+                </Link>
                 <Link
                   href="#mission-previews"
                   className="inline-flex min-h-12 items-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_16px_40px_rgba(255,255,255,0.18)] transition hover:-translate-y-0.5"
@@ -112,7 +134,7 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              <div className="flex flex-wrap gap-2 text-sm font-semibold text-white/84">
+              <div className="flex flex-wrap gap-2 text-sm font-semibold text-white/90">
                 <span className="rounded-full border border-white/12 bg-white/10 px-4 py-2">
                   3 age paths
                 </span>
@@ -153,13 +175,14 @@ export default function HomePage() {
 
                   <div className="rounded-[1.7rem] border border-slate-200/80 bg-slate-950 px-5 py-5 text-white shadow-[0_20px_50px_rgba(15,23,42,0.22)]">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-200/80">
-                      Today&apos;s mission
+                      PP1 Term 2 Week 1
                     </p>
                     <div className="mt-3 flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-2xl font-semibold">Train a Robot Classifier</p>
+                        <p className="text-2xl font-semibold">PP1 Count The Set</p>
                         <p className="mt-2 max-w-sm text-sm leading-6 text-white/66">
-                          Use patterns, rules, and counting to improve accuracy with visible progress in every step.
+                          Counting 5-9 with cups, tins, seeds, sticks, and bottle tops. Then
+                          choose the matching number.
                         </p>
                       </div>
                     </div>

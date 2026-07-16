@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
-import { ensureUser } from "@/lib/server/auth";
+import { ensureLearnerByIdWithTimeout } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
+
+const USER_LOOKUP_TIMEOUT_MS = 1_500;
 
 const bestQuerySchema = z.object({
   gameId: z.string().min(1),
@@ -38,6 +44,17 @@ export async function GET(request: Request) {
       { error: "Invalid query", details: payload.error.flatten() },
       { status: 400 },
     );
+  }
+
+  const learnerCheck = await ensureLearnerByIdWithTimeout(
+    userId,
+    USER_LOOKUP_TIMEOUT_MS,
+  );
+  if (learnerCheck.status === "unauthorized") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (learnerCheck.status === "forbidden") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const best = await prisma.gameBest.findUnique({
@@ -82,27 +99,60 @@ export async function POST(request: Request) {
     );
   }
 
-  const user = await ensureUser();
-  if (!user) {
+  const learnerCheck = await ensureLearnerByIdWithTimeout(
+    userId,
+    USER_LOOKUP_TIMEOUT_MS,
+  );
+  if (learnerCheck.status === "unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (learnerCheck.status === "forbidden") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const user = learnerCheck.user;
 
-  const game = await prisma.game.findUnique({
-    where: { id: payload.data.gameId },
-    select: { id: true },
-  });
+  let game;
+  try {
+    game = await withRouteTimeout(
+      prisma.game.findUnique({
+        where: { id: payload.data.gameId },
+        select: { id: true },
+      }),
+      "game lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "game-best-game-lookup",
+      userId: user.id,
+      gameId: payload.data.gameId,
+      operation: "lookup",
+    });
+  }
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  const existing = await prisma.gameBest.findUnique({
-    where: {
-      userId_gameId: {
-        userId: user.id,
-        gameId: payload.data.gameId,
-      },
-    },
-  });
+  let existing;
+  try {
+    existing = await withRouteTimeout(
+      prisma.gameBest.findUnique({
+        where: {
+          userId_gameId: {
+            userId: user.id,
+            gameId: payload.data.gameId,
+          },
+        },
+      }),
+      "game best lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "game-best-existing-lookup",
+      userId: user.id,
+      gameId: payload.data.gameId,
+      operation: "lookup",
+    });
+  }
 
   const incoming = {
     bestScore: payload.data.bestScore,
@@ -124,18 +174,34 @@ export async function POST(request: Request) {
     });
   }
 
-  const best = existing
-    ? await prisma.gameBest.update({
-        where: { id: existing.id },
-        data: incoming,
-      })
-    : await prisma.gameBest.create({
-        data: {
-          userId: user.id,
-          gameId: payload.data.gameId,
-          ...incoming,
-        },
-      });
+  let best;
+  try {
+    best = existing
+      ? await withRouteTimeout(
+          prisma.gameBest.update({
+            where: { id: existing.id },
+            data: incoming,
+          }),
+          "game best update",
+        )
+      : await withRouteTimeout(
+          prisma.gameBest.create({
+            data: {
+              userId: user.id,
+              gameId: payload.data.gameId,
+              ...incoming,
+            },
+          }),
+          "game best create",
+        );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: existing ? "game-best-update" : "game-best-create",
+      userId: user.id,
+      gameId: payload.data.gameId,
+      operation: existing ? "update" : "create",
+    });
+  }
 
   return NextResponse.json({
     ok: true,

@@ -9,9 +9,13 @@ vi.mock("@/lib/server/teach-access", () => ({
   getTeacherOwnerKey: () => getTeacherOwnerKeyMock(),
 }));
 
-vi.mock("@/lib/server/request", () => ({
-  parseJsonBody: (...args: unknown[]) => parseJsonBodyMock(...args),
-}));
+vi.mock("@/lib/server/request", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/server/request")>();
+  return {
+    ...actual,
+    parseJsonBody: (...args: unknown[]) => parseJsonBodyMock(...args),
+  };
+});
 
 vi.mock("@/lib/server/teacher-store", () => ({
   assignTeacherMissionToClass: (...args: unknown[]) =>
@@ -78,5 +82,30 @@ describe("POST /api/teach/class/[classId]/assignment", () => {
       }),
     );
     await expect(response.json()).resolves.toEqual({ assignment: { id: "assignment-1" } });
+  });
+
+  it("returns 503 when assignment persistence times out", async () => {
+    getTeacherOwnerKeyMock.mockResolvedValue("user_1");
+    parseJsonBodyMock.mockResolvedValue({
+      ok: true,
+      data: {
+        courseId: "course-logic",
+        courseTitle: "AI Pattern Detectives",
+        target: "CLASS",
+      },
+    });
+    assignTeacherMissionToClassMock.mockRejectedValue(
+      new Error("Teacher write query timed out"),
+    );
+
+    const { POST } = await import("@/app/api/teach/class/[classId]/assignment/route");
+    const response = await POST(new Request("http://localhost/api/teach/class/x/assignment", { method: "POST" }), {
+      params: Promise.resolve({ classId: "class-1" }),
+    });
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "Database request timed out",
+    });
   });
 });

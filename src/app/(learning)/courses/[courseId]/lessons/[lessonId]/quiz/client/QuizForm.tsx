@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { QuizQuestionDetail } from "@/lib/server/data";
+import type { QuizQuestionForLearner } from "@/lib/server/data";
 
 type QuizFormProps = {
   lessonId: string;
-  questions: QuizQuestionDetail[];
+  questions: QuizQuestionForLearner[];
 };
 
 type AnswerState = Record<string, string>;
@@ -99,9 +99,9 @@ export default function QuizForm({ lessonId, questions }: QuizFormProps) {
             className={`rounded-3xl border p-6 shadow-[0_18px_44px_rgba(15,23,42,0.08)] ${
               showFeedback
                 ? isCorrect
-                  ? "border-emerald-200 bg-emerald-50/92"
-                  : "border-rose-200 bg-rose-50/92"
-                : "border-white/80 bg-white/94"
+                  ? "border-emerald-200 bg-emerald-50/95"
+                  : "border-rose-200 bg-rose-50/95"
+                : "border-white/80 bg-white/95"
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -187,7 +187,7 @@ export default function QuizForm({ lessonId, questions }: QuizFormProps) {
           </div>
         );
       })}
-      <div className="rounded-3xl border border-white/80 bg-white/94 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+      <div className="rounded-3xl border border-white/80 bg-white/95 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
         <button
           type="button"
           onClick={handleSubmit}

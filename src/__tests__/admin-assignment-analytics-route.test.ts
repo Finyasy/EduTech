@@ -85,4 +85,21 @@ describe("GET /api/admin/teach/assignment-analytics", () => {
     const payload = await response.json();
     expect(payload.summary.totalAssignments).toBe(2);
   });
+
+  it("returns 503 when analytics retrieval times out", async () => {
+    requireAdminMock.mockResolvedValue({ ok: true, user: { id: "admin" } });
+    getTeacherAssignmentAnalyticsReportMock.mockRejectedValue(
+      new Error("Teacher workspace detail query timed out"),
+    );
+
+    const { GET } = await import("@/app/api/admin/teach/assignment-analytics/route");
+    const response = await GET(
+      new Request("http://localhost/api/admin/teach/assignment-analytics"),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "Database request timed out",
+    });
+  });
 });

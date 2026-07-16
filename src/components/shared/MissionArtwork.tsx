@@ -27,10 +27,10 @@ export default function MissionArtwork({
       />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_52%,rgba(7,20,45,0.72)_100%)]" />
       <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-white/30 bg-white/88 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-800 shadow-sm">
+        <span className="rounded-full border border-white/30 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-800 shadow-sm">
           Mission studio
         </span>
-        <span className="rounded-full border border-emerald-200/80 bg-emerald-50/92 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-900 shadow-sm">
+        <span className="rounded-full border border-emerald-200/80 bg-emerald-50/95 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-900 shadow-sm">
           Learn + build + share
         </span>
       </div>

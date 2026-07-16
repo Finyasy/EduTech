@@ -438,6 +438,150 @@ describe("teacher workspace snapshot cache", () => {
     expect(assignmentQuery).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to memory when session status hydration times out", async () => {
+    delete process.env.DATABASE_URL;
+    const { addTeacherClassroom, addTeacherLearner, getTeacherWorkspaceSessionStatuses } =
+      await import("@/lib/server/teacher-store");
+    const ownerKey = "teacher_timeout_session";
+
+    const classroom = await addTeacherClassroom(ownerKey, {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    const learner = await addTeacherLearner(ownerKey, classroom.id, {
+      name: "Asha",
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    const fallbackWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    getPrismaMock.mockReturnValue({
+      teacherSchoolProfile: {
+        findUnique: vi.fn().mockResolvedValue({
+          schoolName: "Live School",
+          country: "Kenya",
+          appVersion: "4.1.0",
+          deviceId: "lb-live",
+          connectivityStatus: "OKAY",
+          contentStatus: "UP_TO_DATE",
+          supportEmail: "support@example.com",
+          schoolQrCode: "LIVE-QR",
+        }),
+      },
+      teacherClassroom: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: classroom.id,
+            name: classroom.name,
+            grade: classroom.grade,
+            teacherName: classroom.teacherName,
+            teacherPhone: classroom.teacherPhone,
+            cardColor: classroom.cardColor,
+            isArchived: false,
+            createdAt: new Date(classroom.createdAt),
+            updatedAt: new Date(classroom.updatedAt),
+          },
+        ]),
+      },
+      teacherLearner: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "learner-1",
+            classId: classroom.id,
+            userId: null,
+            name: "Asha",
+            avatarHue: 120,
+            weeklyMinutes: 15,
+            lastWeekMinutes: 12,
+            createdAt: new Date("2026-03-11T00:00:00.000Z"),
+          },
+        ]),
+      },
+      teacherSessionStatus: {
+        findMany: vi.fn().mockReturnValue(new Promise(() => {})),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+    });
+
+    const resultPromise = getTeacherWorkspaceSessionStatuses({
+      ownerKey,
+      classId: classroom.id,
+      activityId: "activity-sorting-grouping",
+    });
+
+    await vi.advanceTimersByTimeAsync(2_501);
+    const result = await resultPromise;
+
+    expect(result).toEqual({
+      sessionStatuses: { [learner.id]: "KEEP_GOING" },
+    });
+    expect(fallbackWarnSpy).toHaveBeenCalledWith(
+      "[teacher-store-fallback]",
+      expect.objectContaining({
+        event: "workspace-session-statuses",
+        ownerKey,
+        classId: classroom.id,
+      }),
+    );
+    fallbackWarnSpy.mockRestore();
+  });
+
+  it("falls back to memory when assignment hydration times out", async () => {
+    delete process.env.DATABASE_URL;
+    const { addTeacherClassroom, assignTeacherMissionToClass, getTeacherWorkspaceAssignments } =
+      await import("@/lib/server/teacher-store");
+    const ownerKey = "teacher_timeout_assignments";
+
+    const classroom = await addTeacherClassroom(ownerKey, {
+      name: "Latency Test",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    const seededAssignment = await assignTeacherMissionToClass({
+      ownerKey,
+      classId: classroom.id,
+      courseId: "course-logic",
+      courseTitle: "AI Pattern Detectives",
+      target: "CLASS",
+      subjectId: "subject-math",
+      strandId: "strand-pre-number",
+      activityId: "activity-sorting-grouping",
+      note: "Keep the class moving.",
+    });
+
+    process.env.DATABASE_URL = "postgresql://local/test";
+    const fallbackWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    getPrismaMock.mockReturnValue({
+      $queryRaw: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const resultPromise = getTeacherWorkspaceAssignments({
+      ownerKey,
+    });
+
+    await vi.advanceTimersByTimeAsync(2_501);
+    const result = await resultPromise;
+
+    expect(result.assignments.some((assignment) => assignment.id === seededAssignment.id)).toBe(true);
+    expect(result.assignmentAnalytics.totalAssignments).toBeGreaterThanOrEqual(1);
+    expect(fallbackWarnSpy).toHaveBeenCalledWith(
+      "[teacher-store-fallback]",
+      expect.objectContaining({
+        event: "workspace-assignments",
+        ownerKey,
+      }),
+    );
+    fallbackWarnSpy.mockRestore();
+  });
+
   it("falls back to memory quickly when learner creation stalls in Prisma", async () => {
     delete process.env.DATABASE_URL;
     const { addTeacherClassroom, addTeacherLearner } = await import(
@@ -468,6 +612,98 @@ describe("teacher workspace snapshot cache", () => {
     expect(learner.classId).toBe(classroom.id);
     expect(learner.name).toBe("Asha");
     expect(learner.id).toMatch(/^learner-/);
+  });
+
+  it("rejects linking a teacher account as a learner", async () => {
+    process.env.DATABASE_URL = "postgresql://local/test";
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
+          teacherClassroom: {
+            findFirst: vi.fn().mockResolvedValue({ id: "class-live" }),
+          },
+          user: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: "teacher-user",
+              role: "TEACHER",
+            }),
+          },
+          teacherLearner: {
+            create: vi.fn(),
+          },
+        }),
+      ),
+    });
+
+    const { addTeacherLearner } = await import("@/lib/server/teacher-store");
+
+    await expect(
+      addTeacherLearner("teacher_1", "class-live", {
+        name: "Asha",
+        userEmail: "teacher@example.com",
+      }),
+    ).rejects.toThrow("Only learner accounts can be linked to a classroom.");
+  });
+
+  it("stores teacher curriculum evidence in memory when the persistent store is unavailable", async () => {
+    delete process.env.DATABASE_URL;
+    const {
+      addTeacherClassroom,
+      addTeacherLearner,
+      getTeacherLearnerCurriculumEvidence,
+      listTeacherLearnerCurriculumEvidenceHistory,
+      upsertTeacherLearnerCurriculumEvidence,
+    } = await import("@/lib/server/teacher-store");
+
+    const classroom = await addTeacherClassroom("teacher_1", {
+      name: "Math Evidence",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+    const learner = await addTeacherLearner("teacher_1", classroom.id, {
+      name: "Asha",
+    });
+
+    const saved = await upsertTeacherLearnerCurriculumEvidence({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      learnerId: learner.id,
+      competencyId: "pp1-counting-5-9",
+      note: "Needed one prompt on quantity 8.",
+      rubricLevelOverride: "APPROACHES_EXPECTATION",
+      supportLevelOverride: "PROMPTS",
+      countedEachObjectOnce: false,
+      skippedDoubleCounted: true,
+      matchedNumeralCorrectly: false,
+      neededPrompts: true,
+    });
+
+    const loaded = await getTeacherLearnerCurriculumEvidence({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      learnerId: learner.id,
+      competencyId: "pp1-counting-5-9",
+    });
+    const history = await listTeacherLearnerCurriculumEvidenceHistory({
+      ownerKey: "teacher_1",
+      classId: classroom.id,
+      learnerId: learner.id,
+      competencyId: "pp1-counting-5-9",
+    });
+
+    expect(saved.rubricLevelOverride).toBe("APPROACHES_EXPECTATION");
+    expect(loaded).toEqual(saved);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toEqual(
+      expect.objectContaining({
+        note: "Needed one prompt on quantity 8.",
+        recordedAt: expect.any(String),
+      }),
+    );
   });
 
   it("falls back to memory quickly when learner session updates stall in Prisma", async () => {
@@ -547,5 +783,104 @@ describe("teacher workspace snapshot cache", () => {
     expect(assignment.classId).toBe(classroom.id);
     expect(assignment.courseId).toBe("course-logic");
     expect(assignment.isFallbackData).toBe(true);
+  });
+});
+
+describe("teacher store production write guard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    vi.useFakeTimers();
+    process.env.DATABASE_URL = "postgresql://local/test";
+    mutableEnv.NODE_ENV = "production";
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+    if (originalNodeEnv === undefined) {
+      delete mutableEnv.NODE_ENV;
+    } else {
+      mutableEnv.NODE_ENV = originalNodeEnv;
+    }
+  });
+
+  it("rejects stalled mission assignment writes instead of writing to memory", async () => {
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+
+    const { assignTeacherMissionToClass } = await import(
+      "@/lib/server/teacher-store"
+    );
+
+    const assignmentPromise = assignTeacherMissionToClass({
+      ownerKey: "teacher_prod",
+      classId: "class-db-1",
+      courseId: "course-logic",
+      courseTitle: "AI Pattern Detectives",
+      target: "CLASS",
+    });
+    const assertion = expect(assignmentPromise).rejects.toThrow(/timed out/);
+
+    await vi.advanceTimersByTimeAsync(1_801);
+    await assertion;
+  });
+
+  it("rejects evidence writes on database failure and keeps memory clean", async () => {
+    const unreachable = Object.assign(
+      new Error("Can't reach database server at `db.internal`"),
+      { code: "P1001" },
+    );
+    getPrismaMock.mockReturnValue({
+      $transaction: vi.fn().mockRejectedValue(unreachable),
+    });
+
+    const {
+      upsertTeacherLearnerCurriculumEvidence,
+      listTeacherLearnerCurriculumEvidenceHistory,
+    } = await import("@/lib/server/teacher-store");
+
+    await expect(
+      upsertTeacherLearnerCurriculumEvidence({
+        ownerKey: "teacher_prod",
+        classId: "class-db-1",
+        learnerId: "learner-db-1",
+        competencyId: "pp1-counting-5-9",
+        note: "Should never be stored in memory.",
+      }),
+    ).rejects.toThrow("Can't reach database server");
+
+    delete process.env.DATABASE_URL;
+    const history = await listTeacherLearnerCurriculumEvidenceHistory({
+      ownerKey: "teacher_prod",
+      classId: "class-db-1",
+      learnerId: "learner-db-1",
+      competencyId: "pp1-counting-5-9",
+    });
+    expect(history).toHaveLength(0);
+  });
+
+  it("still allows memory writes in production demo mode without a database", async () => {
+    delete process.env.DATABASE_URL;
+    getPrismaMock.mockReturnValue(null);
+
+    const { addTeacherClassroom } = await import("@/lib/server/teacher-store");
+
+    const classroom = await addTeacherClassroom("teacher_prod_demo", {
+      name: "Demo Class",
+      grade: "PP1",
+      teacherName: "Mary",
+      teacherPhone: "+254700000001",
+      acceptDeviceTerms: true,
+      acceptDataPolicy: true,
+    });
+
+    expect(classroom.name).toBe("Demo Class");
+    expect(classroom.id).toMatch(/^class-/);
   });
 });

@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
-import { ensureUser } from "@/lib/server/auth";
+import { ensureLearnerByIdWithTimeout } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
+
+const USER_LOOKUP_TIMEOUT_MS = 1_500;
 
 const quizSchema = z.object({
   lessonId: z.string().min(1),
@@ -25,6 +31,18 @@ const normalizeMultipleChoice = (value: string) => value.trim().toLowerCase();
 
 export async function POST(request: Request) {
   const { userId } = await auth();
+  if (userId) {
+    const learnerCheck = await ensureLearnerByIdWithTimeout(
+      userId,
+      USER_LOOKUP_TIMEOUT_MS,
+    );
+    if (learnerCheck.status === "unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (learnerCheck.status === "forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   const prisma = getPrisma();
   if (!prisma) {
@@ -49,19 +67,45 @@ export async function POST(request: Request) {
 
   const { lessonId, answers } = payload.data;
 
-  const lesson = await prisma.lesson.findFirst({
-    where: { id: lessonId, isPublished: true },
-    select: { id: true },
-  });
+  let lesson;
+  try {
+    lesson = await withRouteTimeout(
+      prisma.lesson.findFirst({
+        where: { id: lessonId, isPublished: true },
+        select: { id: true },
+      }),
+      "lesson lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "quiz-lesson-lookup",
+      userId,
+      lessonId,
+      operation: "lookup",
+    });
+  }
 
   if (!lesson) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  const questions = await prisma.quizQuestion.findMany({
-    where: { lessonId },
-    orderBy: { createdAt: "asc" },
-  });
+  let questions;
+  try {
+    questions = await withRouteTimeout(
+      prisma.quizQuestion.findMany({
+        where: { lessonId },
+        orderBy: { createdAt: "asc" },
+      }),
+      "quiz question lookup",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "quiz-questions-lookup",
+      userId,
+      lessonId,
+      operation: "lookup",
+    });
+  }
 
   if (questions.length === 0) {
     return NextResponse.json(
@@ -98,17 +142,36 @@ export async function POST(request: Request) {
 
   let saved = false;
   if (userId) {
-    const user = await ensureUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const learnerCheck = await ensureLearnerByIdWithTimeout(
+      userId,
+      USER_LOOKUP_TIMEOUT_MS,
+    );
+    if (learnerCheck.status !== "ok") {
+      return NextResponse.json(
+        { error: learnerCheck.status === "forbidden" ? "Forbidden" : "Unauthorized" },
+        { status: learnerCheck.status === "forbidden" ? 403 : 401 },
+      );
     }
-    await prisma.quizAttempt.create({
-      data: {
+    const user = learnerCheck.user;
+    try {
+      await withRouteTimeout(
+        prisma.quizAttempt.create({
+          data: {
+            userId: user.id,
+            lessonId,
+            score,
+          },
+        }),
+        "quiz attempt write",
+      );
+    } catch (error) {
+      return toDatabaseFailureResponse(error, {
+        context: "quiz-attempt-write",
         userId: user.id,
         lessonId,
-        score,
-      },
-    });
+        operation: "create",
+      });
+    }
     saved = true;
   }
 

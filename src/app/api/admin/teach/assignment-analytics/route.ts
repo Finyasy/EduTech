@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/server/auth";
 import { getTeacherAssignmentAnalyticsReport } from "@/lib/server/teacher-store";
+import {
+  isDatabaseFailureError,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 
 const querySchema = z.object({
   ownerKey: z.string().min(1).optional(),
@@ -58,13 +62,21 @@ export async function GET(request: Request) {
     );
   }
 
-  const report = await getTeacherAssignmentAnalyticsReport({
-    ownerKey: parsed.data.ownerKey,
-    classId: parsed.data.classId,
-    target: parsed.data.target,
-    dateFrom,
-    dateTo,
-  });
+  let report;
+  try {
+    report = await getTeacherAssignmentAnalyticsReport({
+      ownerKey: parsed.data.ownerKey,
+      classId: parsed.data.classId,
+      target: parsed.data.target,
+      dateFrom,
+      dateTo,
+    });
+  } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "admin-assignment-analytics");
+    }
+    throw error;
+  }
 
   return NextResponse.json(report);
 }

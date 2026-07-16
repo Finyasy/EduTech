@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lesson Artifact Review"
+  short_description: "Review learner artifacts and scoring flows."
+  default_prompt: "Review learner artifacts, scoring, and teacher-facing artifact workflows."

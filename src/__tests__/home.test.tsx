@@ -25,7 +25,7 @@ describe("HomePage", () => {
     ).toBeInTheDocument();
 
     expect(
-      screen.getByRole("link", { name: /choose a mission/i }),
-    ).toHaveAttribute("href", "/courses");
+      screen.getByRole("link", { name: /try sample missions/i }),
+    ).toHaveAttribute("href", "#mission-previews");
   });
 });

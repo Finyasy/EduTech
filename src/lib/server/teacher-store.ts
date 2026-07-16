@@ -1,7 +1,15 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
+import {
+  getMathCurriculumRecordById,
+  type MathCurriculumRubricLevel,
+  type MathCurriculumSupportLevel,
+  type MathCurriculumTeacherJudgement,
+  type MathCurriculumTeacherJudgementHistoryEntry,
+} from "@/lib/curriculum/math-roadmap";
 import { getPrisma } from "@/lib/server/prisma";
+import { isLearnerRole } from "@/lib/server/auth";
 import {
   clearScopeDegraded,
   isScopeDegraded,
@@ -48,6 +56,21 @@ type UpdateClassInput = {
 
 type AddLearnerInput = {
   name: string;
+  userEmail?: string | null;
+};
+
+type UpsertTeacherLearnerCurriculumEvidenceInput = {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+  note?: string | null;
+  rubricLevelOverride?: MathCurriculumRubricLevel | null;
+  supportLevelOverride?: MathCurriculumSupportLevel | null;
+  countedEachObjectOnce?: boolean;
+  skippedDoubleCounted?: boolean;
+  matchedNumeralCorrectly?: boolean;
+  neededPrompts?: boolean;
 };
 
 type TeacherAssignmentAnalyticsFilters = {
@@ -95,6 +118,41 @@ const TEACHER_WRITE_TRANSACTION_TIMEOUT_MS = 1_500;
 const TEACHER_WRITE_QUERY_TIMEOUT_MS = 1_800;
 const TEACHER_WORKSPACE_DEGRADED_SCOPE = "teacher-workspace";
 const ENABLE_WORKSPACE_CACHE = process.env.NODE_ENV !== "test";
+
+const toTeacherStoreLogPayload = (
+  event: string,
+  details: Record<string, string | number | boolean | null | undefined>,
+) => ({
+  event,
+  reason: details.reason ?? "unknown",
+  ...details,
+});
+
+const logTeacherStoreFallback = (
+  event: string,
+  details: Record<string, string | number | boolean | null | undefined>,
+) => {
+  console.warn("[teacher-store-fallback]", toTeacherStoreLogPayload(event, details));
+};
+
+const logTeacherStoreError = (
+  event: string,
+  error: unknown,
+  details: Record<string, string | number | boolean | null | undefined>,
+) => {
+  const reason = error instanceof Error ? error.message : String(error ?? "unknown");
+  const errorName = error instanceof Error ? error.name : typeof error;
+  const errorCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : undefined;
+
+  console.error("[teacher-store-error]", {
+    ...toTeacherStoreLogPayload(event, { ...details, reason }),
+    errorName,
+    errorCode,
+  });
+};
 
 const withTeacherWorkspaceTimeout = <T,>(promise: Promise<T>) =>
   Promise.race<T>([
@@ -340,6 +398,22 @@ const STATUS_FLOW: LearnerProgressStatus[] = [
 const STATUS_DEFAULT: LearnerProgressStatus = "KEEP_GOING";
 const CARD_COLORS = ["bg-rose-100", "bg-sky-100", "bg-amber-100", "bg-lime-100"];
 const FIRST_ACTIVITY_ID = ACTIVITIES[0]?.id ?? null;
+const curriculumEvidenceMemoryKey = (learnerId: string, competencyId: string) =>
+  `${learnerId}::${competencyId}`;
+
+const toTeacherJudgementHistoryEntry = (input: MathCurriculumTeacherJudgement & {
+  recordedAt: string;
+}): MathCurriculumTeacherJudgementHistoryEntry => ({
+  note: input.note,
+  rubricLevelOverride: input.rubricLevelOverride,
+  supportLevelOverride: input.supportLevelOverride,
+  countedEachObjectOnce: input.countedEachObjectOnce,
+  skippedDoubleCounted: input.skippedDoubleCounted,
+  matchedNumeralCorrectly: input.matchedNumeralCorrectly,
+  neededPrompts: input.neededPrompts,
+  updatedAt: input.updatedAt,
+  recordedAt: input.recordedAt,
+});
 
 type MemoryWorkspace = {
   school: TeacherSchoolSettings;
@@ -347,6 +421,28 @@ type MemoryWorkspace = {
   learners: TeacherLearner[];
   sessionStatuses: Record<string, Record<string, LearnerProgressStatus>>;
   assignments: TeacherMissionAssignment[];
+  curriculumEvidence: Record<
+    string,
+    MathCurriculumTeacherJudgement & {
+      competencyId: string;
+      rubricId: string;
+      gameId: string | null;
+      classId: string;
+      learnerId: string;
+      ownerKey: string;
+      createdAt: string;
+    }
+  >;
+  curriculumEvidenceHistory: Array<
+    MathCurriculumTeacherJudgementHistoryEntry & {
+      competencyId: string;
+      rubricId: string;
+      gameId: string | null;
+      classId: string;
+      learnerId: string;
+      ownerKey: string;
+    }
+  >;
   idCounter: number;
 };
 
@@ -675,16 +771,16 @@ const validateClassUpdate = (input: UpdateClassInput) => {
 };
 
 const seededLearners = (classId: string): TeacherLearner[] => [
-  { id: "learner-joy", classId, name: "Joy Nelima", avatarHue: 210, weeklyMinutes: 32, lastWeekMinutes: 19, createdAt: nowIso() },
-  { id: "learner-glory", classId, name: "Glory Ndanu", avatarHue: 344, weeklyMinutes: 28, lastWeekMinutes: 17, createdAt: nowIso() },
-  { id: "learner-joshua", classId, name: "Joshua Simon", avatarHue: 45, weeklyMinutes: 24, lastWeekMinutes: 21, createdAt: nowIso() },
-  { id: "learner-trevor", classId, name: "Trevor Obama", avatarHue: 123, weeklyMinutes: 17, lastWeekMinutes: 11, createdAt: nowIso() },
-  { id: "learner-eunice", classId, name: "Eunice Munini", avatarHue: 271, weeklyMinutes: 11, lastWeekMinutes: 9, createdAt: nowIso() },
-  { id: "learner-frank", classId, name: "Frank Mutetei", avatarHue: 18, weeklyMinutes: 8, lastWeekMinutes: 10, createdAt: nowIso() },
-  { id: "learner-calvin", classId, name: "Calvince Otieno", avatarHue: 195, weeklyMinutes: 5, lastWeekMinutes: 6, createdAt: nowIso() },
-  { id: "learner-adri", classId, name: "Adri Amani", avatarHue: 90, weeklyMinutes: 3, lastWeekMinutes: 7, createdAt: nowIso() },
-  { id: "learner-accem", classId, name: "Accem Muthoni", avatarHue: 250, weeklyMinutes: 22, lastWeekMinutes: 20, createdAt: nowIso() },
-  { id: "learner-favour", classId, name: "Favour Mtwa", avatarHue: 300, weeklyMinutes: 18, lastWeekMinutes: 13, createdAt: nowIso() },
+  { id: "learner-joy", classId, userId: null, name: "Joy Nelima", avatarHue: 210, weeklyMinutes: 32, lastWeekMinutes: 19, createdAt: nowIso() },
+  { id: "learner-glory", classId, userId: null, name: "Glory Ndanu", avatarHue: 344, weeklyMinutes: 28, lastWeekMinutes: 17, createdAt: nowIso() },
+  { id: "learner-joshua", classId, userId: null, name: "Joshua Simon", avatarHue: 45, weeklyMinutes: 24, lastWeekMinutes: 21, createdAt: nowIso() },
+  { id: "learner-trevor", classId, userId: null, name: "Trevor Obama", avatarHue: 123, weeklyMinutes: 17, lastWeekMinutes: 11, createdAt: nowIso() },
+  { id: "learner-eunice", classId, userId: null, name: "Eunice Munini", avatarHue: 271, weeklyMinutes: 11, lastWeekMinutes: 9, createdAt: nowIso() },
+  { id: "learner-frank", classId, userId: null, name: "Frank Mutetei", avatarHue: 18, weeklyMinutes: 8, lastWeekMinutes: 10, createdAt: nowIso() },
+  { id: "learner-calvin", classId, userId: null, name: "Calvince Otieno", avatarHue: 195, weeklyMinutes: 5, lastWeekMinutes: 6, createdAt: nowIso() },
+  { id: "learner-adri", classId, userId: null, name: "Adri Amani", avatarHue: 90, weeklyMinutes: 3, lastWeekMinutes: 7, createdAt: nowIso() },
+  { id: "learner-accem", classId, userId: null, name: "Accem Muthoni", avatarHue: 250, weeklyMinutes: 22, lastWeekMinutes: 20, createdAt: nowIso() },
+  { id: "learner-favour", classId, userId: null, name: "Favour Mtwa", avatarHue: 300, weeklyMinutes: 18, lastWeekMinutes: 13, createdAt: nowIso() },
 ];
 
 const createMemoryWorkspace = (ownerKey: string): MemoryWorkspace => {
@@ -763,6 +859,8 @@ const createMemoryWorkspace = (ownerKey: string): MemoryWorkspace => {
     learners: seededLearners(activeClassId),
     sessionStatuses: {},
     assignments: seededAssignments,
+    curriculumEvidence: {},
+    curriculumEvidenceHistory: [],
     idCounter: 3000,
   };
 };
@@ -776,6 +874,152 @@ const getMemoryWorkspace = (ownerKey: string) => {
   const created = createMemoryWorkspace(ownerKey);
   memoryStore.set(ownerKey, created);
   return created;
+};
+
+const getTeacherLearnerCurriculumEvidenceMemory = (input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+}): MathCurriculumTeacherJudgement | null => {
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    return null;
+  }
+  const learner = workspace.learners.find(
+    (item) => item.id === input.learnerId && item.classId === input.classId,
+  );
+  if (!learner) {
+    return null;
+  }
+
+  const record =
+    workspace.curriculumEvidence[
+      curriculumEvidenceMemoryKey(input.learnerId, input.competencyId)
+    ] ?? null;
+  if (!record) {
+    return null;
+  }
+
+  return {
+    note: record.note,
+    rubricLevelOverride: record.rubricLevelOverride,
+    supportLevelOverride: record.supportLevelOverride,
+    countedEachObjectOnce: record.countedEachObjectOnce,
+    skippedDoubleCounted: record.skippedDoubleCounted,
+    matchedNumeralCorrectly: record.matchedNumeralCorrectly,
+    neededPrompts: record.neededPrompts,
+    updatedAt: record.updatedAt,
+  };
+};
+
+const listTeacherLearnerCurriculumEvidenceHistoryMemory = (input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+  limit?: number;
+}): MathCurriculumTeacherJudgementHistoryEntry[] => {
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    return [];
+  }
+  const learner = workspace.learners.find(
+    (item) => item.id === input.learnerId && item.classId === input.classId,
+  );
+  if (!learner) {
+    return [];
+  }
+
+  return workspace.curriculumEvidenceHistory
+    .filter(
+      (item) =>
+        item.classId === input.classId &&
+        item.learnerId === input.learnerId &&
+        item.competencyId === input.competencyId,
+    )
+    .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))
+    .slice(0, input.limit ?? 10)
+    .map(toTeacherJudgementHistoryEntry);
+};
+
+const upsertTeacherLearnerCurriculumEvidenceMemory = (
+  input: UpsertTeacherLearnerCurriculumEvidenceInput,
+): MathCurriculumTeacherJudgement => {
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  const workspace = getMemoryWorkspace(input.ownerKey);
+  const classroom = workspace.classes.find(
+    (item) => item.id === input.classId && !item.isArchived,
+  );
+  if (!classroom) {
+    throw new Error("Class not found.");
+  }
+  const learner = workspace.learners.find(
+    (item) => item.id === input.learnerId && item.classId === input.classId,
+  );
+  if (!learner) {
+    throw new Error("Learner not found.");
+  }
+
+  const updatedAt = nowIso();
+  workspace.curriculumEvidence[
+    curriculumEvidenceMemoryKey(input.learnerId, input.competencyId)
+  ] = {
+    ownerKey: input.ownerKey,
+    classId: input.classId,
+    learnerId: input.learnerId,
+    competencyId: input.competencyId,
+    rubricId: curriculumRecord.rubricId,
+    gameId: curriculumRecord.gameId ?? null,
+    note: input.note ?? null,
+    rubricLevelOverride: input.rubricLevelOverride ?? null,
+    supportLevelOverride: input.supportLevelOverride ?? null,
+    countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+    skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+    matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+    neededPrompts: input.neededPrompts ?? false,
+    createdAt: updatedAt,
+    updatedAt,
+  };
+  workspace.curriculumEvidenceHistory.unshift({
+    ownerKey: input.ownerKey,
+    classId: input.classId,
+    learnerId: input.learnerId,
+    competencyId: input.competencyId,
+    rubricId: curriculumRecord.rubricId,
+    gameId: curriculumRecord.gameId ?? null,
+    note: input.note ?? null,
+    rubricLevelOverride: input.rubricLevelOverride ?? null,
+    supportLevelOverride: input.supportLevelOverride ?? null,
+    countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+    skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+    matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+    neededPrompts: input.neededPrompts ?? false,
+    updatedAt,
+    recordedAt: updatedAt,
+  });
+
+  invalidateWorkspaceSnapshotCache(input.ownerKey);
+  return {
+    note: input.note ?? null,
+    rubricLevelOverride: input.rubricLevelOverride ?? null,
+    supportLevelOverride: input.supportLevelOverride ?? null,
+    countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+    skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+    matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+    neededPrompts: input.neededPrompts ?? false,
+    updatedAt,
+  };
 };
 
 const isSeededMemoryClassId = (ownerKey: string, classId: string) =>
@@ -1029,6 +1273,7 @@ const mapClassroomFromDb = (classroom: {
 const mapLearnerFromDb = (learner: {
   id: string;
   classId: string;
+  userId: string | null;
   name: string;
   avatarHue: number;
   weeklyMinutes: number;
@@ -1037,6 +1282,7 @@ const mapLearnerFromDb = (learner: {
 }): TeacherLearner => ({
   id: learner.id,
   classId: learner.classId,
+  userId: learner.userId,
   name: learner.name,
   avatarHue: learner.avatarHue,
   weeklyMinutes: learner.weeklyMinutes,
@@ -1044,40 +1290,49 @@ const mapLearnerFromDb = (learner: {
   createdAt: toIso(learner.createdAt),
 });
 
-async function ensureSchoolProfile(ownerKey: string) {
-  const prisma = getPrisma();
+async function ensureSchoolProfile(
+  ownerKey: string,
+  client?: TeacherStoreDbClient,
+) {
+  const prisma = client ?? getPrisma();
   if (!prisma) {
     return ensureSchoolSettings(ownerKey);
   }
 
-  const existingProfile = await prisma.teacherSchoolProfile.findUnique({
-    where: { ownerKey },
-  });
+  const existingProfile = await withTeacherWriteTimeout(
+    prisma.teacherSchoolProfile.findUnique({
+      where: { ownerKey },
+    }),
+  );
   if (existingProfile) {
     return mapSchoolFromDb(existingProfile);
   }
 
   const defaults = ensureSchoolSettings(ownerKey);
   try {
-    const profile = await prisma.teacherSchoolProfile.create({
-      data: {
-        ownerKey,
-        schoolName: defaults.schoolName,
-        country: defaults.country,
-        appVersion: defaults.appVersion,
-        deviceId: defaults.deviceId,
-        connectivityStatus: defaults.connectivityStatus,
-        contentStatus: defaults.contentStatus,
-        supportEmail: defaults.supportEmail,
-        schoolQrCode: defaults.schoolQrCode,
-      },
-    });
+    const profile = await withTeacherWriteTimeout(
+      prisma.teacherSchoolProfile.create({
+        data: {
+          ownerKey,
+          schoolName: defaults.schoolName,
+          country: defaults.country,
+          appVersion: defaults.appVersion,
+          deviceId: defaults.deviceId,
+          connectivityStatus: defaults.connectivityStatus,
+          contentStatus: defaults.contentStatus,
+          supportEmail: defaults.supportEmail,
+          schoolQrCode: defaults.schoolQrCode,
+        },
+      }),
+    );
 
     return mapSchoolFromDb(profile);
   } catch (error) {
-    const profile = await prisma.teacherSchoolProfile.findUnique({
-      where: { ownerKey },
-    });
+    const profile = await withTeacherWriteTimeout(
+      prisma.teacherSchoolProfile.findUnique({
+        where: { ownerKey },
+      }),
+    );
     if (profile) {
       return mapSchoolFromDb(profile);
     }
@@ -1398,6 +1653,7 @@ async function fetchWorkspaceCoreBaseFromDatabase(
           select: {
             id: true,
             classId: true,
+            userId: true,
             name: true,
             avatarHue: true,
             weeklyMinutes: true,
@@ -1769,6 +2025,15 @@ export async function getTeacherWorkspaceSnapshot(
     return snapshot;
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
+      logTeacherStoreFallback("workspace-snapshot", {
+        ownerKey: query.ownerKey,
+        classId: query.classId,
+        subjectId: query.subjectId,
+        strandId: query.strandId,
+        activityId: query.activityId,
+        detailLevel,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       markScopeDegraded(
         TEACHER_WORKSPACE_DEGRADED_SCOPE,
         error instanceof Error ? error.message : "teacher-workspace-db-failure",
@@ -1820,6 +2085,14 @@ export async function getTeacherWorkspaceSessionStatuses(
     return await refreshTeacherWorkspaceSessionStatuses(query);
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
+      logTeacherStoreFallback("workspace-session-statuses", {
+        ownerKey: query.ownerKey,
+        classId: query.classId,
+        subjectId: query.subjectId,
+        strandId: query.strandId,
+        activityId: query.activityId,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       const snapshot = await getWorkspaceFromMemory(query);
       const result = { sessionStatuses: snapshot.sessionStatuses };
       writeWorkspaceSessionStatusesCache(query, result);
@@ -1862,6 +2135,14 @@ export async function getTeacherWorkspaceAssignments(
     return await refreshTeacherWorkspaceAssignments(query);
   } catch (error) {
     if (shouldFallbackToMemory(error)) {
+      logTeacherStoreFallback("workspace-assignments", {
+        ownerKey: query.ownerKey,
+        classId: query.classId,
+        subjectId: query.subjectId,
+        strandId: query.strandId,
+        activityId: query.activityId,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       const snapshot = await getWorkspaceFromMemory(query);
       const result = {
         assignments: snapshot.assignments,
@@ -1873,6 +2154,14 @@ export async function getTeacherWorkspaceAssignments(
     throw error;
   }
 }
+
+// Writes must never land in the per-instance memory store when a persistent
+// store is configured in production: serverless instances do not share
+// memory, so a fallback write that reports success is silently lost when the
+// instance recycles. Let the error propagate so routes answer 503 instead.
+// Reads may still degrade to cached or memory data.
+const canFallbackToMemoryForWrites = () =>
+  process.env.NODE_ENV !== "production" || !hasPersistentStore();
 
 const shouldFallbackToMemory = (error: unknown) => {
   if (!error || typeof error !== "object") {
@@ -1988,6 +2277,7 @@ const addTeacherLearnerMemory = (
   ownerKey: string,
   classId: string,
   name: string,
+  userId: string | null = null,
 ) => {
   const seeded = name
     .split("")
@@ -2004,6 +2294,7 @@ const addTeacherLearnerMemory = (
   const learner: TeacherLearner = {
     id: nextMemoryId(workspace, "learner"),
     classId,
+    userId,
     name,
     avatarHue: seeded % 360,
     weeklyMinutes: 5 + (seeded % 28),
@@ -2125,26 +2416,31 @@ export async function addTeacherClassroom(
   }
 
   try {
-    const prisma = getPrisma()!;
-    await ensureSchoolProfile(ownerKey);
-    const count = await prisma.teacherClassroom.count({ where: { ownerKey } });
+    const classroom = await runTeacherWriteTransaction(async (tx) => {
+      await ensureSchoolProfile(ownerKey, tx);
+      const count = await withTeacherWriteTimeout(
+        tx.teacherClassroom.count({ where: { ownerKey } }),
+      );
 
-    const classroom = await prisma.teacherClassroom.create({
-      data: {
-        ownerKey,
-        name: validated.name,
-        grade: validated.grade,
-        teacherName: validated.teacherName,
-        teacherPhone: validated.teacherPhone,
-        cardColor: CARD_COLORS[count % CARD_COLORS.length],
-      },
+      return withTeacherWriteTimeout(
+        tx.teacherClassroom.create({
+          data: {
+            ownerKey,
+            name: validated.name,
+            grade: validated.grade,
+            teacherName: validated.teacherName,
+            teacherPhone: validated.teacherPhone,
+            cardColor: CARD_COLORS[count % CARD_COLORS.length],
+          },
+        }),
+      );
     });
 
     const mapped = mapClassroomFromDb(classroom);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return mapped;
   } catch (error) {
-    if (shouldFallbackToMemory(error)) {
+    if (canFallbackToMemoryForWrites() && shouldFallbackToMemory(error)) {
       const classroom = addTeacherClassroomMemory(ownerKey, validated);
       invalidateWorkspaceSnapshotCache(ownerKey);
       return classroom;
@@ -2160,31 +2456,39 @@ export async function updateTeacherClassroom(
 ): Promise<TeacherClassroom> {
   const validated = validateClassUpdate(input);
 
-  if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() && isSeededMemoryClassId(ownerKey, classId))
+  ) {
     const classroom = updateTeacherClassroomMemory(ownerKey, classId, validated);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return classroom;
   }
 
   try {
-    const prisma = getPrisma()!;
-    const existing = await prisma.teacherClassroom.findFirst({
-      where: { id: classId, ownerKey },
-      select: { id: true },
-    });
+    const classroom = await runTeacherWriteTransaction(async (tx) => {
+      const existing = await withTeacherWriteTimeout(
+        tx.teacherClassroom.findFirst({
+          where: { id: classId, ownerKey },
+          select: { id: true },
+        }),
+      );
 
-    if (!existing) {
-      throw new Error("Class not found.");
-    }
+      if (!existing) {
+        throw new Error("Class not found.");
+      }
 
-    const classroom = await prisma.teacherClassroom.update({
-      where: { id: classId },
-      data: {
-        name: validated.nextName,
-        grade: validated.nextGrade,
-        teacherName: validated.nextTeacherName,
-        teacherPhone: validated.nextTeacherPhone,
-      },
+      return withTeacherWriteTimeout(
+        tx.teacherClassroom.update({
+          where: { id: classId },
+          data: {
+            name: validated.nextName,
+            grade: validated.nextGrade,
+            teacherName: validated.nextTeacherName,
+            teacherPhone: validated.nextTeacherPhone,
+          },
+        }),
+      );
     });
 
     const mapped = mapClassroomFromDb(classroom);
@@ -2192,8 +2496,9 @@ export async function updateTeacherClassroom(
     return mapped;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId }))
     ) {
       const classroom = updateTeacherClassroomMemory(ownerKey, classId, validated);
       invalidateWorkspaceSnapshotCache(ownerKey);
@@ -2208,38 +2513,49 @@ async function setClassArchivedState(
   classId: string,
   isArchived: boolean,
 ): Promise<TeacherClassroom> {
-  if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() && isSeededMemoryClassId(ownerKey, classId))
+  ) {
     const classroom = setClassArchivedStateMemory(ownerKey, classId, isArchived);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return classroom;
   }
 
   try {
-    const prisma = getPrisma()!;
-    const result = await prisma.teacherClassroom.updateMany({
-      where: { id: classId, ownerKey },
-      data: { isArchived },
+    const classroom = await runTeacherWriteTransaction(async (tx) => {
+      const result = await withTeacherWriteTimeout(
+        tx.teacherClassroom.updateMany({
+          where: { id: classId, ownerKey },
+          data: { isArchived },
+        }),
+      );
+
+      if (result.count === 0) {
+        throw new Error("Class not found.");
+      }
+
+      const updated = await withTeacherWriteTimeout(
+        tx.teacherClassroom.findUnique({
+          where: { id: classId },
+        }),
+      );
+
+      if (!updated) {
+        throw new Error("Class not found.");
+      }
+
+      return updated;
     });
-
-    if (result.count === 0) {
-      throw new Error("Class not found.");
-    }
-
-    const classroom = await prisma.teacherClassroom.findUnique({
-      where: { id: classId },
-    });
-
-    if (!classroom) {
-      throw new Error("Class not found.");
-    }
 
     const mapped = mapClassroomFromDb(classroom);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return mapped;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId }))
     ) {
       const classroom = setClassArchivedStateMemory(ownerKey, classId, isArchived);
       invalidateWorkspaceSnapshotCache(ownerKey);
@@ -2263,6 +2579,7 @@ export async function addTeacherLearner(
   input: AddLearnerInput,
 ): Promise<TeacherLearner> {
   const name = input.name.trim();
+  const userEmail = input.userEmail?.trim().toLowerCase() ?? null;
   if (!name) {
     throw new Error("Learner name is required.");
   }
@@ -2271,7 +2588,10 @@ export async function addTeacherLearner(
     .split("")
     .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
-  if (!hasPersistentStore() || isSeededMemoryClassId(ownerKey, classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() && isSeededMemoryClassId(ownerKey, classId))
+  ) {
     const learner = addTeacherLearnerMemory(ownerKey, classId, name);
     invalidateWorkspaceSnapshotCache(ownerKey);
     return learner;
@@ -2288,9 +2608,24 @@ export async function addTeacherLearner(
         throw new Error("Class not found.");
       }
 
+      const linkedUser = userEmail
+        ? await tx.user.findUnique({
+            where: { email: userEmail },
+            select: { id: true, role: true },
+          })
+        : null;
+
+      if (userEmail && !linkedUser) {
+        throw new Error("No learner account found for that email.");
+      }
+      if (linkedUser && !isLearnerRole(linkedUser.role)) {
+        throw new Error("Only learner accounts can be linked to a classroom.");
+      }
+
       const learner = await tx.teacherLearner.create({
         data: {
           classId,
+          userId: linkedUser?.id ?? null,
           name,
           avatarHue: seeded % 360,
           weeklyMinutes: 5 + (seeded % 28),
@@ -2304,12 +2639,294 @@ export async function addTeacherLearner(
     return mapped;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({ error, ownerKey, classId }))
     ) {
       const learner = addTeacherLearnerMemory(ownerKey, classId, name);
       invalidateWorkspaceSnapshotCache(ownerKey);
       return learner;
+    }
+    throw error;
+  }
+}
+
+export async function getTeacherLearnerCurriculumEvidence(input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+}): Promise<MathCurriculumTeacherJudgement | null> {
+  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+    return getTeacherLearnerCurriculumEvidenceMemory(input);
+  }
+
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    return getTeacherLearnerCurriculumEvidenceMemory(input);
+  }
+
+  try {
+    const record = await withTeacherWorkspaceDetailTimeout(
+      prisma.teacherLearnerCurriculumEvidence.findFirst({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+          competencyId: input.competencyId,
+          classroom: { ownerKey: input.ownerKey, isArchived: false },
+        },
+        select: {
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          updatedAt: true,
+        },
+      }),
+    );
+
+    if (!record) {
+      return null;
+    }
+
+    return {
+      note: record.note ?? null,
+      rubricLevelOverride:
+        (record.rubricLevelOverride as MathCurriculumRubricLevel | null) ?? null,
+      supportLevelOverride:
+        (record.supportLevelOverride as MathCurriculumSupportLevel | null) ?? null,
+      countedEachObjectOnce: record.countedEachObjectOnce,
+      skippedDoubleCounted: record.skippedDoubleCounted,
+      matchedNumeralCorrectly: record.matchedNumeralCorrectly,
+      neededPrompts: record.neededPrompts,
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      return getTeacherLearnerCurriculumEvidenceMemory(input);
+    }
+    throw error;
+  }
+}
+
+export async function listTeacherLearnerCurriculumEvidenceHistory(input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+  competencyId: string;
+  limit?: number;
+}): Promise<MathCurriculumTeacherJudgementHistoryEntry[]> {
+  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+    return listTeacherLearnerCurriculumEvidenceHistoryMemory(input);
+  }
+
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    return listTeacherLearnerCurriculumEvidenceHistoryMemory(input);
+  }
+
+  try {
+    const records = await withTeacherWorkspaceDetailTimeout(
+      prisma.teacherLearnerCurriculumEvidenceHistory.findMany({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+          competencyId: input.competencyId,
+          classroom: { ownerKey: input.ownerKey, isArchived: false },
+        },
+        orderBy: { recordedAt: "desc" },
+        take: input.limit ?? 10,
+        select: {
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          recordedAt: true,
+        },
+      }),
+    );
+
+    return records.map((record) => ({
+      note: record.note ?? null,
+      rubricLevelOverride:
+        (record.rubricLevelOverride as MathCurriculumRubricLevel | null) ?? null,
+      supportLevelOverride:
+        (record.supportLevelOverride as MathCurriculumSupportLevel | null) ?? null,
+      countedEachObjectOnce: record.countedEachObjectOnce,
+      skippedDoubleCounted: record.skippedDoubleCounted,
+      matchedNumeralCorrectly: record.matchedNumeralCorrectly,
+      neededPrompts: record.neededPrompts,
+      updatedAt: record.recordedAt.toISOString(),
+      recordedAt: record.recordedAt.toISOString(),
+    }));
+  } catch (error) {
+    if (shouldFallbackToMemory(error)) {
+      return listTeacherLearnerCurriculumEvidenceHistoryMemory(input);
+    }
+    throw error;
+  }
+}
+
+export async function upsertTeacherLearnerCurriculumEvidence(
+  input: UpsertTeacherLearnerCurriculumEvidenceInput,
+): Promise<MathCurriculumTeacherJudgement> {
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() &&
+      isSeededMemoryClassId(input.ownerKey, input.classId))
+  ) {
+    return upsertTeacherLearnerCurriculumEvidenceMemory(input);
+  }
+
+  try {
+    const evidence = await runTeacherWriteTransaction(async (tx) => {
+      const classroom = await withTeacherWriteTimeout(
+        tx.teacherClassroom.findFirst({
+          where: {
+            id: input.classId,
+            ownerKey: input.ownerKey,
+            isArchived: false,
+          },
+          select: { id: true },
+        }),
+      );
+
+      if (!classroom) {
+        throw new Error("Class not found.");
+      }
+
+      const learner = await withTeacherWriteTimeout(
+        tx.teacherLearner.findFirst({
+          where: {
+            id: input.learnerId,
+            classId: input.classId,
+          },
+          select: { id: true },
+        }),
+      );
+
+      if (!learner) {
+        throw new Error("Learner not found.");
+      }
+
+      await withTeacherWriteTimeout(
+        tx.teacherLearnerCurriculumEvidenceHistory.create({
+          data: {
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: input.learnerId,
+            competencyId: input.competencyId,
+            rubricId: curriculumRecord.rubricId,
+            gameId: curriculumRecord.gameId ?? null,
+            note: input.note ?? null,
+            rubricLevelOverride: input.rubricLevelOverride ?? null,
+            supportLevelOverride: input.supportLevelOverride ?? null,
+            countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+            skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+            matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+            neededPrompts: input.neededPrompts ?? false,
+          },
+        }),
+      );
+
+      return withTeacherWriteTimeout(
+        tx.teacherLearnerCurriculumEvidence.upsert({
+          where: {
+            ownerKey_learnerId_competencyId: {
+              ownerKey: input.ownerKey,
+              learnerId: input.learnerId,
+              competencyId: input.competencyId,
+            },
+          },
+          update: {
+            classId: input.classId,
+            rubricId: curriculumRecord.rubricId,
+            gameId: curriculumRecord.gameId ?? null,
+            note: input.note ?? null,
+            rubricLevelOverride: input.rubricLevelOverride ?? null,
+            supportLevelOverride: input.supportLevelOverride ?? null,
+            countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+            skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+            matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+            neededPrompts: input.neededPrompts ?? false,
+          },
+          create: {
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: input.learnerId,
+            competencyId: input.competencyId,
+            rubricId: curriculumRecord.rubricId,
+            gameId: curriculumRecord.gameId ?? null,
+            note: input.note ?? null,
+            rubricLevelOverride: input.rubricLevelOverride ?? null,
+            supportLevelOverride: input.supportLevelOverride ?? null,
+            countedEachObjectOnce: input.countedEachObjectOnce ?? false,
+            skippedDoubleCounted: input.skippedDoubleCounted ?? false,
+            matchedNumeralCorrectly: input.matchedNumeralCorrectly ?? false,
+            neededPrompts: input.neededPrompts ?? false,
+          },
+          select: {
+            note: true,
+            rubricLevelOverride: true,
+            supportLevelOverride: true,
+            countedEachObjectOnce: true,
+            skippedDoubleCounted: true,
+            matchedNumeralCorrectly: true,
+            neededPrompts: true,
+            updatedAt: true,
+          },
+        }),
+      );
+    });
+
+    invalidateWorkspaceSnapshotCache(input.ownerKey);
+    return {
+      note: evidence.note ?? null,
+      rubricLevelOverride:
+        (evidence.rubricLevelOverride as MathCurriculumRubricLevel | null) ?? null,
+      supportLevelOverride:
+        (evidence.supportLevelOverride as MathCurriculumSupportLevel | null) ?? null,
+      countedEachObjectOnce: evidence.countedEachObjectOnce,
+      skippedDoubleCounted: evidence.skippedDoubleCounted,
+      matchedNumeralCorrectly: evidence.matchedNumeralCorrectly,
+      neededPrompts: evidence.neededPrompts,
+      updatedAt: evidence.updatedAt.toISOString(),
+    };
+  } catch (error) {
+    if (
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({
+          error,
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+        }))
+    ) {
+      return upsertTeacherLearnerCurriculumEvidenceMemory(input);
     }
     throw error;
   }
@@ -2327,7 +2944,8 @@ export async function advanceLearnerProgressStatus(input: {
 
   if (
     !hasPersistentStore() ||
-    isSeededMemoryClassId(input.ownerKey, input.classId)
+    (canFallbackToMemoryForWrites() &&
+      isSeededMemoryClassId(input.ownerKey, input.classId))
   ) {
     const status = advanceLearnerProgressStatusMemory(input);
     invalidateWorkspaceSnapshotCache(input.ownerKey);
@@ -2393,13 +3011,14 @@ export async function advanceLearnerProgressStatus(input: {
     return next;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({
-        error,
-        ownerKey: input.ownerKey,
-        classId: input.classId,
-        learnerId: input.learnerId,
-      })
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({
+          error,
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          learnerId: input.learnerId,
+        }))
     ) {
       const status = advanceLearnerProgressStatusMemory(input);
       invalidateWorkspaceSnapshotCache(input.ownerKey);
@@ -2449,11 +3068,12 @@ export async function getTeacherAssignmentAnalyticsReport(
       if (!shouldFallbackToMemory(error)) {
         throw error;
       }
-      console.warn(
-        `[teacher-assignments] analytics report falling back to memory reason=${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
+      logTeacherStoreFallback("assignment-analytics-report", {
+        ownerKey: filters.ownerKey,
+        classId: filters.classId,
+        target: filters.target,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
     }
   }
 
@@ -2560,7 +3180,11 @@ export async function assignTeacherMissionToClass(input: {
   learnerIds?: string[];
   note?: string | null;
 }): Promise<TeacherMissionAssignment> {
-  if (!hasPersistentStore() || isSeededMemoryClassId(input.ownerKey, input.classId)) {
+  if (
+    !hasPersistentStore() ||
+    (canFallbackToMemoryForWrites() &&
+      isSeededMemoryClassId(input.ownerKey, input.classId))
+  ) {
     const assignment = upsertTeacherMissionAssignmentMemory(input);
     invalidateWorkspaceSnapshotCache(input.ownerKey);
     return assignment;
@@ -2586,26 +3210,33 @@ export async function assignTeacherMissionToClass(input: {
     return assignment;
   } catch (error) {
     if (
-      shouldFallbackToMemory(error) ||
-      shouldFallbackToMemoryEntityNotFound({
-        error,
+      canFallbackToMemoryForWrites() &&
+      (shouldFallbackToMemory(error) ||
+        shouldFallbackToMemoryEntityNotFound({
+          error,
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+        }))
+    ) {
+      logTeacherStoreFallback("assignment-write", {
         ownerKey: input.ownerKey,
         classId: input.classId,
-      })
-    ) {
-      console.warn(
-        `[teacher-assignments] db persistence unavailable, using memory fallback owner=${input.ownerKey} classId=${input.classId} reason=${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
+        target: input.target,
+        courseId: input.courseId,
+        activityId: input.activityId,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       const assignment = upsertTeacherMissionAssignmentMemory(input);
       invalidateWorkspaceSnapshotCache(input.ownerKey);
       return assignment;
     }
-    console.error(
-      `[teacher-assignments] failed to persist assignment owner=${input.ownerKey} classId=${input.classId}`,
-      error,
-    );
+    logTeacherStoreError("assignment-write", error, {
+      ownerKey: input.ownerKey,
+      classId: input.classId,
+      target: input.target,
+      courseId: input.courseId,
+      activityId: input.activityId,
+    });
     throw error;
   }
 }

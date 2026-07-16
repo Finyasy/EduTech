@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
-import { ensureUser } from "@/lib/server/auth";
+import { ensureLearnerByIdWithTimeout } from "@/lib/server/auth";
 import { getPrisma } from "@/lib/server/prisma";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  parseJsonBody,
+  toDatabaseFailureResponse,
+  withRouteTimeout,
+} from "@/lib/server/request";
+
+const USER_LOOKUP_TIMEOUT_MS = 1_500;
 
 const progressSchema = z.object({
   lessonId: z.string().min(1),
@@ -48,6 +54,17 @@ export async function GET(request: Request) {
       { error: "Database not configured" },
       { status: 501 },
     );
+  }
+
+  const learnerCheck = await ensureLearnerByIdWithTimeout(
+    userId,
+    USER_LOOKUP_TIMEOUT_MS,
+  );
+  if (learnerCheck.status === "unauthorized") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (learnerCheck.status === "forbidden") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const progress = await prisma.lessonProgress.findUnique({
@@ -101,29 +118,48 @@ export async function POST(request: Request) {
   const completedAt =
     completed === undefined ? undefined : completed ? new Date() : null;
 
-  const user = await ensureUser();
-  if (!user) {
+  const learnerCheck = await ensureLearnerByIdWithTimeout(
+    userId,
+    USER_LOOKUP_TIMEOUT_MS,
+  );
+  if (learnerCheck.status === "unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (learnerCheck.status === "forbidden") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const user = learnerCheck.user;
 
-  await prisma.lessonProgress.upsert({
-    where: {
-      userId_lessonId: {
-        userId,
-        lessonId,
-      },
-    },
-    update: {
-      watchPercent,
-      completedAt,
-    },
-    create: {
+  try {
+    await withRouteTimeout(
+      prisma.lessonProgress.upsert({
+        where: {
+          userId_lessonId: {
+            userId,
+            lessonId,
+          },
+        },
+        update: {
+          watchPercent,
+          completedAt,
+        },
+        create: {
+          userId,
+          lessonId,
+          watchPercent,
+          completedAt: completed ? new Date() : null,
+        },
+      }),
+      "lesson progress write",
+    );
+  } catch (error) {
+    return toDatabaseFailureResponse(error, {
+      context: "lesson-progress-write",
       userId,
       lessonId,
-      watchPercent,
-      completedAt: completed ? new Date() : null,
-    },
-  });
+      operation: "upsert",
+    });
+  }
 
   revalidateTag(`dashboard-stats:${user.id}`, { expire: 0 });
 

@@ -18,6 +18,7 @@ export type TeacherClassroom = {
 export type TeacherLearner = {
   id: string;
   classId: string;
+  userId: string | null;
   name: string;
   avatarHue: number;
   weeklyMinutes: number;

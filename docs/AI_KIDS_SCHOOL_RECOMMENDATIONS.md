@@ -66,7 +66,13 @@ Design the school around young learners so Artificial Intelligence, coding, and 
 - Parent/teacher dedicated dashboard pages are scaffolded by existing workspace routes, but full role-based mastery reporting logic still needs backend expansion.
 
 ### Next Improvements
-1. Persist curriculum metadata in database schema (instead of mock-only fields).
+1. Link classroom learners to authenticated learner accounts for precise teacher review.
 2. Add teacher rubric scoring API for AI/code/math mastery.
-3. Add student artifact gallery and monthly capstone submission workflow.
-4. Introduce adaptive difficulty based on mastery map signals.
+3. Expand the artifact submission flow into a student gallery and monthly capstone workflow.
+4. Introduce adaptive difficulty based on rubric-backed mastery map signals.
+
+### Latest Implementation Update
+- Course curriculum metadata is now represented in the database schema.
+- Learner artifact, mastery rubric, and mastery score models have been added.
+- Lesson pages now include a build-evidence submission panel.
+- The teacher workspace now surfaces recent learner artifacts for review.

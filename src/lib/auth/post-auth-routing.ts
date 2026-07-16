@@ -51,7 +51,7 @@ export function getPostAuthRedirectTarget({
   const normalizedRequestedPath = normalizeAppRedirectPath(requestedPath);
 
   if (!isClerkPublishableKeyConfigured(clerkPublishableKey)) {
-    return "/dashboard";
+    return "/courses";
   }
 
   if (!userId) {
@@ -66,5 +66,5 @@ export function getPostAuthRedirectTarget({
     return "/teach";
   }
 
-  return "/dashboard";
+  return "/courses";
 }

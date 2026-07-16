@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clerk Prisma Debug"
+  short_description: "Debug auth, user sync, and DB boundaries."
+  default_prompt: "Debug Clerk, Prisma, middleware, and user-sync issues in EduTech."

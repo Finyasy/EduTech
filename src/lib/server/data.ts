@@ -2,6 +2,14 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { Prisma } from "@prisma/client";
 import {
+  buildMathCurriculumEvidenceSummary,
+  type MathCurriculumEvidenceSummary,
+  type MathCurriculumTeacherJudgement,
+  type MathCurriculumTeacherJudgementHistoryEntry,
+  getMathCurriculumRecordById,
+  listMathCurriculumRecordsWithGames,
+} from "@/lib/curriculum/math-roadmap";
+import {
   clearScopeDegraded,
   isScopeDegraded,
   markScopeDegraded,
@@ -16,6 +24,11 @@ import {
   getGame as getMockGame,
   getGameLevels as getMockGameLevels,
 } from "@/lib/server/mock-data";
+import {
+  getTeacherLearnerCurriculumEvidence,
+  getTeacherWorkspaceSnapshot,
+  listTeacherLearnerCurriculumEvidenceHistory,
+} from "@/lib/server/teacher-store";
 
 export type CourseOverview = {
   id: string;
@@ -54,14 +67,24 @@ export type QuizQuestionDetail = {
   explanation: string | null;
 };
 
+// Learner-facing shape: must never include `answer` or `explanation`, because
+// these objects are serialized into the client payload of the quiz page.
+export type QuizQuestionForLearner = Omit<
+  QuizQuestionDetail,
+  "answer" | "explanation"
+>;
+
 const hasDatabase = () =>
   Boolean(process.env.DATABASE_URL && getPrisma());
 
+const isDevelopment = process.env.NODE_ENV === "development";
+
 const PUBLIC_DATA_REVALIDATE_SECONDS = 120;
 const PUBLIC_DATA_CACHE_VERSION = "2026-03-10-live";
-const COURSE_QUERY_TIMEOUT_MS = 2_500;
-const TEACHER_COURSE_QUERY_TIMEOUT_MS = 900;
-const GAME_QUERY_TIMEOUT_MS = 2_200;
+const COURSE_QUERY_TIMEOUT_MS = isDevelopment ? 5_000 : 2_500;
+const TEACHER_COURSE_QUERY_TIMEOUT_MS = isDevelopment ? 2_500 : 900;
+const GAME_QUERY_TIMEOUT_MS = isDevelopment ? 3_500 : 2_200;
+const SHARED_DATA_QUERY_TIMEOUT_MS = isDevelopment ? 4_500 : 2_500;
 const COURSES_DEGRADED_SCOPE = "courses-public";
 const GAMES_DEGRADED_SCOPE = "games-public";
 const DASHBOARD_DEGRADED_SCOPE = "dashboard-stats";
@@ -169,6 +192,25 @@ const withCourseQueryTimeout = async <T,>(
       setTimeout(() => resolve(null), timeoutMs),
     ),
   ]);
+
+const withSharedDataQueryTimeout = async <T,>(
+  promise: Promise<T>,
+  label: string,
+  timeoutMs = SHARED_DATA_QUERY_TIMEOUT_MS,
+): Promise<T> => {
+  const result = await Promise.race([
+    promise.then((value) => ({ ok: true as const, value })),
+    new Promise<{ ok: false }>((resolve) =>
+      setTimeout(() => resolve({ ok: false }), timeoutMs),
+    ),
+  ]);
+
+  if (!result.ok) {
+    throw new Error(`${label}-query-timeout`);
+  }
+
+  return result.value;
+};
 
 async function listCoursesFromDatabaseWithTimeout(
   timeoutMs: number,
@@ -416,27 +458,30 @@ export async function listCoursesForAdmin(): Promise<CourseForAdmin[]> {
 
   const prisma = getPrisma()!;
   try {
-    const dbCourses = await prisma.course.findMany({
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        gradeLevel: true,
-        ageBand: true,
-        pathwayStage: true,
-        aiFocus: true,
-        codingFocus: true,
-        mathFocus: true,
-        missionOutcome: true,
-        sessionBlueprint: true,
-        isPublished: true,
-        lessons: {
-          orderBy: { order: "asc" },
-          select: { id: true, isPublished: true },
+    const dbCourses = await withSharedDataQueryTimeout(
+      prisma.course.findMany({
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          ageBand: true,
+          pathwayStage: true,
+          aiFocus: true,
+          codingFocus: true,
+          mathFocus: true,
+          missionOutcome: true,
+          sessionBlueprint: true,
+          isPublished: true,
+          lessons: {
+            orderBy: { order: "asc" },
+            select: { id: true, isPublished: true },
+          },
         },
-      },
-      orderBy: { title: "asc" },
-    });
+        orderBy: { title: "asc" },
+      }),
+      "admin-courses-list",
+    );
     return dbCourses.map((course) => ({
       id: course.id,
       title: course.title,
@@ -458,20 +503,23 @@ export async function listCoursesForAdmin(): Promise<CourseForAdmin[]> {
       throw error;
     }
 
-    const legacyCourses = await prisma.course.findMany({
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        gradeLevel: true,
-        isPublished: true,
-        lessons: {
-          orderBy: { order: "asc" },
-          select: { id: true, isPublished: true },
+    const legacyCourses = await withSharedDataQueryTimeout(
+      prisma.course.findMany({
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          isPublished: true,
+          lessons: {
+            orderBy: { order: "asc" },
+            select: { id: true, isPublished: true },
+          },
         },
-      },
-      orderBy: { title: "asc" },
-    });
+        orderBy: { title: "asc" },
+      }),
+      "admin-courses-list-legacy",
+    );
     return legacyCourses.map((course) => ({
       id: course.id,
       title: course.title,
@@ -514,39 +562,45 @@ export async function getCourseForAdmin(
   } | null = null;
 
   try {
-    course = await prisma.course.findUnique({
-      where: { id: courseId },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        gradeLevel: true,
-        ageBand: true,
-        pathwayStage: true,
-        aiFocus: true,
-        codingFocus: true,
-        mathFocus: true,
-        missionOutcome: true,
-        sessionBlueprint: true,
-        isPublished: true,
-        lessons: { select: { id: true } },
-      },
-    });
+    course = await withSharedDataQueryTimeout(
+      prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          ageBand: true,
+          pathwayStage: true,
+          aiFocus: true,
+          codingFocus: true,
+          mathFocus: true,
+          missionOutcome: true,
+          sessionBlueprint: true,
+          isPublished: true,
+          lessons: { select: { id: true } },
+        },
+      }),
+      "admin-course-detail",
+    );
   } catch (error) {
     if (!isCourseMetadataUnavailableError(error)) {
       throw error;
     }
-    course = await prisma.course.findUnique({
-      where: { id: courseId },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        gradeLevel: true,
-        isPublished: true,
-        lessons: { select: { id: true } },
-      },
-    });
+    course = await withSharedDataQueryTimeout(
+      prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          gradeLevel: true,
+          isPublished: true,
+          lessons: { select: { id: true } },
+        },
+      }),
+      "admin-course-detail-legacy",
+    );
   }
   if (!course) return null;
 
@@ -574,10 +628,13 @@ export async function listLessonsForAdmin(
   if (!hasDatabase()) return [];
 
   const prisma = getPrisma()!;
-  const lessons = await prisma.lesson.findMany({
-    where: { courseId },
-    orderBy: { order: "asc" },
-  });
+  const lessons = await withSharedDataQueryTimeout(
+    prisma.lesson.findMany({
+      where: { courseId },
+      orderBy: { order: "asc" },
+    }),
+    "admin-lessons-list",
+  );
   return lessons.map((lesson) => ({
     id: lesson.id,
     courseId: lesson.courseId,
@@ -595,9 +652,12 @@ export async function getLessonForAdmin(
   if (!hasDatabase()) return null;
 
   const prisma = getPrisma()!;
-  const lesson = await prisma.lesson.findUnique({
-    where: { id: lessonId },
-  });
+  const lesson = await withSharedDataQueryTimeout(
+    prisma.lesson.findUnique({
+      where: { id: lessonId },
+    }),
+    "admin-lesson-detail",
+  );
   if (!lesson) return null;
 
   return {
@@ -849,7 +909,69 @@ export type DashboardStats = {
   completedTotal: number;
   completedThisWeek: number;
   streakDays: number;
+  mastery: {
+    ai: number;
+    coding: number;
+    math: number;
+  };
   isFallbackData?: boolean;
+};
+
+export type LearnerArtifactSummary = {
+  id: string;
+  userId: string;
+  learnerName: string | null;
+  learnerEmail: string;
+  lessonId: string;
+  lessonTitle: string;
+  courseId: string;
+  courseTitle: string;
+  title: string;
+  buildType: string;
+  reflection: string;
+  artifactUrl: string | null;
+  status: "SUBMITTED" | "REVIEWED";
+  createdAt: string;
+};
+
+export type TeacherLearnerDashboardSummary = {
+  learner: {
+    id: string;
+    classId: string;
+    userId: string | null;
+    name: string;
+    linkedAccount: boolean;
+  };
+  dashboard: DashboardStats | null;
+  quiz: {
+    attemptCount: number;
+    averageScore: number | null;
+    latestScore: number | null;
+    latestSubmittedAt: string | null;
+  };
+  games: {
+    attemptCount: number;
+    bestRecordCount: number;
+    bestScore: number | null;
+    latestSubmittedAt: string | null;
+  };
+  artifacts: {
+    totalCount: number;
+    reviewedCount: number;
+    recent: LearnerArtifactSummary[];
+  };
+  curriculumEvidence: MathCurriculumEvidenceSummary[];
+};
+
+export type TeacherClassCurriculumEvidenceItem = {
+  learner: {
+    id: string;
+    classId: string;
+    userId: string | null;
+    name: string;
+    linkedAccount: boolean;
+  };
+  evidence: MathCurriculumEvidenceSummary;
 };
 
 const fallbackDashboardStats = (): DashboardStats => ({
@@ -857,8 +979,76 @@ const fallbackDashboardStats = (): DashboardStats => ({
   completedTotal: 0,
   completedThisWeek: 0,
   streakDays: 0,
+  mastery: { ai: 0, coding: 0, math: 0 },
   isFallbackData: true,
 });
+
+const fallbackMasteryFromActivity = (input: {
+  completedTotal: number;
+  completedThisWeek: number;
+  streakDays: number;
+}) => ({
+  ai: Math.max(0, Math.min(100, input.completedTotal * 12 + input.completedThisWeek * 8)),
+  coding: Math.max(0, Math.min(100, input.completedTotal * 10 + input.streakDays * 5)),
+  math: Math.max(0, Math.min(100, input.completedTotal * 9 + input.completedThisWeek * 10)),
+});
+
+async function getMasteryPercentages(userId: string) {
+  if (!hasDatabase()) {
+    return { ai: 0, coding: 0, math: 0 };
+  }
+
+  const prisma = getPrisma()!;
+  const rows = await withSharedDataQueryTimeout(
+    prisma.masteryScore.groupBy({
+      by: ["rubricId"],
+      where: {
+        userId,
+        assessedAt: { not: null },
+      },
+      _avg: { score: true },
+    }),
+    "dashboard-mastery-rows",
+  );
+
+  if (rows.length === 0) {
+    return { ai: 0, coding: 0, math: 0 };
+  }
+
+  const rubrics = await withSharedDataQueryTimeout(
+    prisma.masteryRubric.findMany({
+      where: { id: { in: rows.map((row) => row.rubricId) } },
+      select: { id: true, dimension: true, maxScore: true },
+    }),
+    "dashboard-mastery-rubrics",
+  );
+  const rubricMap = new Map(rubrics.map((rubric) => [rubric.id, rubric]));
+  const buckets = {
+    AI: [] as number[],
+    CODING: [] as number[],
+    MATH: [] as number[],
+  };
+
+  rows.forEach((row) => {
+    const rubric = rubricMap.get(row.rubricId);
+    const average = row._avg.score;
+    if (!rubric || average === null || rubric.maxScore <= 0) {
+      return;
+    }
+    buckets[rubric.dimension].push(Math.round((average / rubric.maxScore) * 100));
+  });
+
+  const averageBucket = (values: number[]) =>
+    values.length === 0
+      ? 0
+      : Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+
+  return {
+    ai: averageBucket(buckets.AI),
+    coding: averageBucket(buckets.CODING),
+    math: averageBucket(buckets.MATH),
+  };
+}
 
 async function getDashboardStatsUncached(
   userId: string,
@@ -873,19 +1063,22 @@ async function getDashboardStatsUncached(
   const prisma = getPrisma()!;
   try {
     // Continue watching: most recent progress not yet completed (no completedAt or watchPercent < 100)
-    const inProgress = await prisma.lessonProgress.findFirst({
-      where: {
-        userId,
-        OR: [
-          { completedAt: null },
-          { watchPercent: { lt: 100 } },
-        ],
-      },
-      orderBy: { updatedAt: "desc" },
-      include: {
-        lesson: { include: { course: true } },
-      },
-    });
+    const inProgress = await withSharedDataQueryTimeout(
+      prisma.lessonProgress.findFirst({
+        where: {
+          userId,
+          OR: [
+            { completedAt: null },
+            { watchPercent: { lt: 100 } },
+          ],
+        },
+        orderBy: { updatedAt: "desc" },
+        include: {
+          lesson: { include: { course: true } },
+        },
+      }),
+      "dashboard-continue-watching",
+    );
 
     const continueWatching: ContinueWatchingItem | null = inProgress
       ? {
@@ -906,34 +1099,45 @@ async function getDashboardStatsUncached(
     startOfWeek.setDate(now.getDate() - mondayOffset);
     startOfWeek.setHours(0, 0, 0, 0);
 
-    const counts = await prisma.$queryRaw<{ total: bigint; week: bigint }[]>`
-      SELECT
-        COUNT(*) FILTER (WHERE "completedAt" IS NOT NULL) AS total,
-        COUNT(*) FILTER (WHERE "completedAt" >= ${startOfWeek}) AS week
-      FROM "LessonProgress"
-      WHERE "userId" = ${userId};
-    `;
+    const counts = await withSharedDataQueryTimeout(
+      prisma.$queryRaw<{ total: bigint; week: bigint }[]>`
+        SELECT
+          COUNT(*) FILTER (WHERE "completedAt" IS NOT NULL) AS total,
+          COUNT(*) FILTER (WHERE "completedAt" >= ${startOfWeek}) AS week
+        FROM "LessonProgress"
+        WHERE "userId" = ${userId};
+      `,
+      "dashboard-completion-counts",
+    );
 
     const completedTotal = Number(counts?.[0]?.total ?? 0);
     const completedThisWeek = Number(counts?.[0]?.week ?? 0);
+    let mastery = await getMasteryPercentages(userId);
 
     if (completedTotal === 0) {
+      mastery = mastery.ai || mastery.coding || mastery.math
+        ? mastery
+        : fallbackMasteryFromActivity({ completedTotal, completedThisWeek, streakDays: 0 });
       clearDegraded(DASHBOARD_DEGRADED_SCOPE);
       return {
         continueWatching,
         completedTotal,
         completedThisWeek,
         streakDays: 0,
+        mastery,
       };
     }
 
-    const completionDates = await prisma.$queryRaw<{ date: Date }[]>`
-      SELECT DISTINCT DATE("completedAt") AS date
-      FROM "LessonProgress"
-      WHERE "userId" = ${userId}
-        AND "completedAt" IS NOT NULL
-      ORDER BY date DESC;
-    `;
+    const completionDates = await withSharedDataQueryTimeout(
+      prisma.$queryRaw<{ date: Date }[]>`
+        SELECT DISTINCT DATE("completedAt") AS date
+        FROM "LessonProgress"
+        WHERE "userId" = ${userId}
+          AND "completedAt" IS NOT NULL
+        ORDER BY date DESC;
+      `,
+      "dashboard-completion-dates",
+    );
 
     const sortedDates = completionDates
       .map((row) => row.date.toISOString().slice(0, 10))
@@ -958,11 +1162,15 @@ async function getDashboardStatsUncached(
     }
 
     clearDegraded(DASHBOARD_DEGRADED_SCOPE);
+    mastery = mastery.ai || mastery.coding || mastery.math
+      ? mastery
+      : fallbackMasteryFromActivity({ completedTotal, completedThisWeek, streakDays });
     return {
       continueWatching,
       completedTotal,
       completedThisWeek,
       streakDays,
+      mastery,
     };
   } catch (error) {
     markDegraded(DASHBOARD_DEGRADED_SCOPE, error);
@@ -979,7 +1187,7 @@ export const getDashboardStats = (userId: string) =>
 
 export async function listQuizQuestions(
   lessonId: string,
-): Promise<QuizQuestionDetail[]> {
+): Promise<QuizQuestionForLearner[]> {
   if (!hasDatabase()) {
     const fallbackQuestion =
       lessonId === "lesson-logic-1"
@@ -990,8 +1198,6 @@ export async function listQuizQuestions(
               type: "MULTIPLE_CHOICE" as const,
               question: "Which shape completes the pattern?",
               options: ["Triangle", "Square", "Circle"],
-              answer: "Square",
-              explanation: "The pattern alternates triangle and square.",
             },
           ]
         : [];
@@ -1000,10 +1206,20 @@ export async function listQuizQuestions(
   }
 
   const prisma = getPrisma()!;
-  const questions = await prisma.quizQuestion.findMany({
-    where: { lessonId },
-    orderBy: { createdAt: "asc" },
-  });
+  const questions = await withSharedDataQueryTimeout(
+    prisma.quizQuestion.findMany({
+      where: { lessonId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        lessonId: true,
+        type: true,
+        question: true,
+        options: true,
+      },
+    }),
+    "quiz-questions",
+  );
 
   return questions.map((question) => ({
     id: question.id,
@@ -1013,7 +1229,714 @@ export async function listQuizQuestions(
     options: Array.isArray(question.options)
       ? (question.options as string[])
       : null,
-    answer: question.answer,
-    explanation: question.explanation ?? null,
+  }));
+}
+
+export async function listLearnerArtifactsForLesson(
+  userId: string,
+  lessonId: string,
+): Promise<LearnerArtifactSummary[]> {
+  if (!hasDatabase()) {
+    return [];
+  }
+
+  const prisma = getPrisma()!;
+  const artifacts = await withSharedDataQueryTimeout(
+    prisma.learnerArtifact.findMany({
+      where: { userId, lessonId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        lesson: {
+          select: {
+            id: true,
+            title: true,
+            courseId: true,
+            course: { select: { id: true, title: true } },
+          },
+        },
+      },
+    }),
+    "learner-artifacts-lesson-list",
+  );
+
+  return artifacts.map((artifact) => ({
+    id: artifact.id,
+    userId: artifact.userId,
+    learnerName: artifact.user.name,
+    learnerEmail: artifact.user.email,
+    lessonId: artifact.lessonId,
+    lessonTitle: artifact.lesson.title,
+    courseId: artifact.lesson.courseId,
+    courseTitle: artifact.lesson.course.title,
+    title: artifact.title,
+    buildType: artifact.buildType,
+    reflection: artifact.reflection,
+    artifactUrl: artifact.artifactUrl,
+    status: artifact.status,
+    createdAt: artifact.createdAt.toISOString(),
+  }));
+}
+
+export async function listRecentLearnerArtifacts(
+  limit = 12,
+  options?: { userIds?: string[] },
+): Promise<LearnerArtifactSummary[]> {
+  if (!hasDatabase()) {
+    return [];
+  }
+
+  const prisma = getPrisma()!;
+  const artifacts = await withSharedDataQueryTimeout(
+    prisma.learnerArtifact.findMany({
+      where:
+        options?.userIds && options.userIds.length > 0
+          ? { userId: { in: options.userIds } }
+          : undefined,
+      take: Math.max(1, Math.min(limit, 50)),
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        lesson: {
+          select: {
+            id: true,
+            title: true,
+            courseId: true,
+            course: { select: { id: true, title: true } },
+          },
+        },
+      },
+    }),
+    "learner-artifacts-recent-list",
+  );
+
+  return artifacts.map((artifact) => ({
+    id: artifact.id,
+    userId: artifact.userId,
+    learnerName: artifact.user.name,
+    learnerEmail: artifact.user.email,
+    lessonId: artifact.lessonId,
+    lessonTitle: artifact.lesson.title,
+    courseId: artifact.lesson.courseId,
+    courseTitle: artifact.lesson.course.title,
+    title: artifact.title,
+    buildType: artifact.buildType,
+    reflection: artifact.reflection,
+    artifactUrl: artifact.artifactUrl,
+    status: artifact.status,
+    createdAt: artifact.createdAt.toISOString(),
+  }));
+}
+
+export async function listRecentLearnerArtifactsForClass(
+  ownerKey: string,
+  classId: string,
+  limit = 12,
+): Promise<LearnerArtifactSummary[]> {
+  if (!hasDatabase()) {
+    return [];
+  }
+
+  const prisma = getPrisma()!;
+  const learners = await withSharedDataQueryTimeout(
+    prisma.teacherLearner.findMany({
+      where: {
+        classId,
+        classroom: { ownerKey, isArchived: false },
+        userId: { not: null },
+      },
+      select: { userId: true },
+    }),
+    "teacher-class-artifact-learners",
+  );
+  const userIds = learners
+    .map((learner) => learner.userId)
+    .filter((userId): userId is string => Boolean(userId));
+
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  return listRecentLearnerArtifacts(limit, { userIds });
+}
+
+const buildTeacherCurriculumEvidenceSummary = (input: {
+  competencyId: string;
+  attempts: Array<{
+    gameLevelId: string;
+    score: number;
+    timeMs: number;
+    submittedAt: string;
+  }>;
+  bestScore: number | null;
+  bestTimeMs: number | null;
+  teacherJudgement: MathCurriculumTeacherJudgement | null;
+  teacherJudgementHistory: MathCurriculumTeacherJudgementHistoryEntry[];
+}) =>
+  buildMathCurriculumEvidenceSummary({
+    competencyId: input.competencyId,
+    attempts: input.attempts,
+    bestScore: input.bestScore,
+    bestTimeMs: input.bestTimeMs,
+    teacherJudgement: input.teacherJudgement,
+    teacherJudgementHistory: input.teacherJudgementHistory,
+  });
+
+export async function getTeacherLearnerDashboardSummary(input: {
+  ownerKey: string;
+  classId: string;
+  learnerId: string;
+}): Promise<TeacherLearnerDashboardSummary | null> {
+  if (!hasDatabase()) {
+    return null;
+  }
+
+  const prisma = getPrisma()!;
+  const learner = await withSharedDataQueryTimeout(
+    prisma.teacherLearner.findFirst({
+      where: {
+        id: input.learnerId,
+        classId: input.classId,
+        classroom: { ownerKey: input.ownerKey, isArchived: false },
+      },
+      select: {
+        id: true,
+        classId: true,
+        userId: true,
+        name: true,
+      },
+    }),
+    "teacher-learner-summary-link",
+  );
+
+  if (!learner) {
+    return null;
+  }
+
+  const dashboardCurriculumRecords = listMathCurriculumRecordsWithGames();
+  const dashboardGameIds = dashboardCurriculumRecords
+    .map((record) => record.gameId)
+    .filter((gameId): gameId is string => Boolean(gameId));
+
+  const loadTeacherJudgementState = async (competencyId: string) => {
+    const [teacherJudgement, teacherJudgementHistory] = await Promise.all([
+      getTeacherLearnerCurriculumEvidence({
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+        learnerId: input.learnerId,
+        competencyId,
+      }),
+      listTeacherLearnerCurriculumEvidenceHistory({
+        ownerKey: input.ownerKey,
+        classId: input.classId,
+        learnerId: input.learnerId,
+        competencyId,
+        limit: 5,
+      }),
+    ]);
+
+    return {
+      competencyId,
+      teacherJudgement,
+      teacherJudgementHistory,
+    };
+  };
+
+  if (!learner.userId) {
+    const teacherJudgementState = await Promise.all(
+      dashboardCurriculumRecords.map((record) => loadTeacherJudgementState(record.id)),
+    );
+    const teacherJudgementByCompetency = new Map(
+      teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgement]),
+    );
+    const teacherJudgementHistoryByCompetency = new Map(
+      teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgementHistory]),
+    );
+    return {
+      learner: {
+        id: learner.id,
+        classId: learner.classId,
+        userId: null,
+        name: learner.name,
+        linkedAccount: false,
+      },
+      dashboard: null,
+      quiz: {
+        attemptCount: 0,
+        averageScore: null,
+        latestScore: null,
+        latestSubmittedAt: null,
+      },
+      games: {
+        attemptCount: 0,
+        bestRecordCount: 0,
+        bestScore: null,
+        latestSubmittedAt: null,
+      },
+      artifacts: {
+        totalCount: 0,
+        reviewedCount: 0,
+        recent: [],
+      },
+      curriculumEvidence: dashboardCurriculumRecords.map((record) =>
+        buildTeacherCurriculumEvidenceSummary({
+          competencyId: record.id,
+          attempts: [],
+          bestScore: null,
+          bestTimeMs: null,
+          teacherJudgement: teacherJudgementByCompetency.get(record.id) ?? null,
+          teacherJudgementHistory:
+            teacherJudgementHistoryByCompetency.get(record.id) ?? [],
+        }),
+      ),
+    };
+  }
+
+  const userId = learner.userId;
+  const [
+    teacherJudgementState,
+    dashboard,
+    quizAggregate,
+    latestQuizAttempt,
+    gameAttemptCount,
+    latestGameAttempt,
+    gameBestAggregate,
+    curriculumAttempts,
+    curriculumBestRows,
+    artifactTotalCount,
+    artifactReviewedCount,
+    recentArtifacts,
+  ] = await Promise.all([
+    Promise.all(
+      dashboardCurriculumRecords.map((record) => loadTeacherJudgementState(record.id)),
+    ),
+    withSharedDataQueryTimeout(
+      getDashboardStats(userId),
+      "teacher-learner-summary-dashboard",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.quizAttempt.aggregate({
+        where: { userId },
+        _count: { _all: true },
+        _avg: { score: true },
+      }),
+      "teacher-learner-summary-quiz-aggregate",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.quizAttempt.findFirst({
+        where: { userId },
+        orderBy: { submittedAt: "desc" },
+        select: { score: true, submittedAt: true },
+      }),
+      "teacher-learner-summary-quiz-latest",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.gameAttempt.count({
+        where: { userId },
+      }),
+      "teacher-learner-summary-game-attempt-count",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.gameAttempt.findFirst({
+        where: { userId },
+        orderBy: { submittedAt: "desc" },
+        select: { submittedAt: true },
+      }),
+      "teacher-learner-summary-game-latest",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.gameBest.aggregate({
+        where: { userId },
+        _count: { _all: true },
+        _max: { bestScore: true },
+      }),
+      "teacher-learner-summary-game-best-aggregate",
+    ),
+    dashboardGameIds.length === 0
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameAttempt.findMany({
+            where: {
+              userId,
+              level: { gameId: { in: dashboardGameIds } },
+            },
+            orderBy: { submittedAt: "desc" },
+            select: {
+              gameLevelId: true,
+              score: true,
+              timeMs: true,
+              submittedAt: true,
+              level: {
+                select: {
+                  gameId: true,
+                },
+              },
+            },
+          }),
+          "teacher-learner-summary-curriculum-attempts",
+        ),
+    dashboardGameIds.length === 0
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameBest.findMany({
+            where: {
+              userId,
+              gameId: { in: dashboardGameIds },
+            },
+            select: { gameId: true, bestScore: true, bestTimeMs: true },
+          }),
+          "teacher-learner-summary-curriculum-best",
+        ),
+    withSharedDataQueryTimeout(
+      prisma.learnerArtifact.count({
+        where: { userId },
+      }),
+      "teacher-learner-summary-artifact-total",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.learnerArtifact.count({
+        where: { userId, status: "REVIEWED" },
+      }),
+      "teacher-learner-summary-artifact-reviewed",
+    ),
+    listRecentLearnerArtifacts(5, { userIds: [userId] }),
+  ]);
+
+  const teacherJudgementByCompetency = new Map(
+    teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgement]),
+  );
+  const teacherJudgementHistoryByCompetency = new Map(
+    teacherJudgementState.map((item) => [item.competencyId, item.teacherJudgementHistory]),
+  );
+  const attemptsByGameId = new Map<
+    string,
+    Array<{ gameLevelId: string; score: number; timeMs: number; submittedAt: string }>
+  >();
+  for (const attempt of curriculumAttempts) {
+    const rows = attemptsByGameId.get(attempt.level.gameId) ?? [];
+    rows.push({
+      gameLevelId: attempt.gameLevelId,
+      score: attempt.score,
+      timeMs: attempt.timeMs,
+      submittedAt: attempt.submittedAt.toISOString(),
+    });
+    attemptsByGameId.set(attempt.level.gameId, rows);
+  }
+  const bestByGameId = new Map(
+    curriculumBestRows.map((row) => [
+      row.gameId,
+      { bestScore: row.bestScore, bestTimeMs: row.bestTimeMs },
+    ]),
+  );
+
+  return {
+    learner: {
+      id: learner.id,
+      classId: learner.classId,
+      userId,
+      name: learner.name,
+      linkedAccount: true,
+    },
+    dashboard,
+    quiz: {
+      attemptCount: quizAggregate._count._all,
+      averageScore:
+        typeof quizAggregate._avg.score === "number"
+          ? Math.round(quizAggregate._avg.score * 100) / 100
+          : null,
+      latestScore: latestQuizAttempt?.score ?? null,
+      latestSubmittedAt: latestQuizAttempt?.submittedAt.toISOString() ?? null,
+    },
+    games: {
+      attemptCount: gameAttemptCount,
+      bestRecordCount: gameBestAggregate._count._all,
+      bestScore: gameBestAggregate._max.bestScore ?? null,
+      latestSubmittedAt: latestGameAttempt?.submittedAt.toISOString() ?? null,
+    },
+    artifacts: {
+      totalCount: artifactTotalCount,
+      reviewedCount: artifactReviewedCount,
+      recent: recentArtifacts,
+    },
+    curriculumEvidence: dashboardCurriculumRecords.map((record) =>
+      buildTeacherCurriculumEvidenceSummary({
+        competencyId: record.id,
+        attempts: record.gameId ? attemptsByGameId.get(record.gameId) ?? [] : [],
+        bestScore: record.gameId ? bestByGameId.get(record.gameId)?.bestScore ?? null : null,
+        bestTimeMs: record.gameId ? bestByGameId.get(record.gameId)?.bestTimeMs ?? null : null,
+        teacherJudgement: teacherJudgementByCompetency.get(record.id) ?? null,
+        teacherJudgementHistory:
+          teacherJudgementHistoryByCompetency.get(record.id) ?? [],
+      }),
+    ),
+  };
+}
+
+export async function listTeacherClassCurriculumEvidence(input: {
+  ownerKey: string;
+  classId: string;
+  competencyId: string;
+}): Promise<TeacherClassCurriculumEvidenceItem[]> {
+  const curriculumRecord = getMathCurriculumRecordById(input.competencyId);
+  if (!curriculumRecord) {
+    throw new Error("Competency not found.");
+  }
+
+  if (!hasDatabase()) {
+    const snapshot = await getTeacherWorkspaceSnapshot(
+      { ownerKey: input.ownerKey, classId: input.classId },
+      { detailLevel: "core" },
+    );
+    if (!snapshot.classes.some((classroom) => classroom.id === input.classId && !classroom.isArchived)) {
+      return [];
+    }
+
+    const learners = snapshot.learners.filter((learner) => learner.classId === input.classId);
+    return Promise.all(
+      learners.map(async (learner) => {
+        const [teacherJudgement, teacherJudgementHistory] = await Promise.all([
+          getTeacherLearnerCurriculumEvidence({
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: learner.id,
+            competencyId: input.competencyId,
+          }),
+          listTeacherLearnerCurriculumEvidenceHistory({
+            ownerKey: input.ownerKey,
+            classId: input.classId,
+            learnerId: learner.id,
+            competencyId: input.competencyId,
+            limit: 5,
+          }),
+        ]);
+
+        return {
+          learner: {
+            id: learner.id,
+            classId: learner.classId,
+            userId: learner.userId,
+            name: learner.name,
+            linkedAccount: Boolean(learner.userId),
+          },
+          evidence: buildTeacherCurriculumEvidenceSummary({
+            competencyId: input.competencyId,
+            attempts: [],
+            bestScore: null,
+            bestTimeMs: null,
+            teacherJudgement,
+            teacherJudgementHistory,
+          }),
+        };
+      }),
+    );
+  }
+
+  const prisma = getPrisma()!;
+  const learners = await withSharedDataQueryTimeout(
+    prisma.teacherLearner.findMany({
+      where: {
+        classId: input.classId,
+        classroom: { ownerKey: input.ownerKey, isArchived: false },
+      },
+      select: {
+        id: true,
+        classId: true,
+        userId: true,
+        name: true,
+      },
+      orderBy: { name: "asc" },
+    }),
+    "teacher-class-curriculum-evidence-learners",
+  );
+
+  if (learners.length === 0) {
+    return [];
+  }
+
+  const userIds = learners
+    .map((learner) => learner.userId)
+    .filter((userId): userId is string => Boolean(userId));
+  const learnerIds = learners.map((learner) => learner.id);
+
+  const [
+    currentJudgements,
+    historyRows,
+    attempts,
+    bestRows,
+  ] = await Promise.all([
+    withSharedDataQueryTimeout(
+      prisma.teacherLearnerCurriculumEvidence.findMany({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          competencyId: input.competencyId,
+          learnerId: { in: learnerIds },
+        },
+        select: {
+          learnerId: true,
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          updatedAt: true,
+        },
+      }),
+      "teacher-class-curriculum-evidence-current",
+    ),
+    withSharedDataQueryTimeout(
+      prisma.teacherLearnerCurriculumEvidenceHistory.findMany({
+        where: {
+          ownerKey: input.ownerKey,
+          classId: input.classId,
+          competencyId: input.competencyId,
+          learnerId: { in: learnerIds },
+        },
+        orderBy: { recordedAt: "desc" },
+        select: {
+          learnerId: true,
+          note: true,
+          rubricLevelOverride: true,
+          supportLevelOverride: true,
+          countedEachObjectOnce: true,
+          skippedDoubleCounted: true,
+          matchedNumeralCorrectly: true,
+          neededPrompts: true,
+          recordedAt: true,
+        },
+      }),
+      "teacher-class-curriculum-evidence-history",
+    ),
+    userIds.length === 0 || !curriculumRecord.gameId
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameAttempt.findMany({
+            where: {
+              userId: { in: userIds },
+              level: { gameId: curriculumRecord.gameId },
+            },
+            orderBy: { submittedAt: "desc" },
+            select: {
+              userId: true,
+              gameLevelId: true,
+              score: true,
+              timeMs: true,
+              submittedAt: true,
+            },
+          }),
+          "teacher-class-curriculum-evidence-attempts",
+        ),
+    userIds.length === 0 || !curriculumRecord.gameId
+      ? Promise.resolve([])
+      : withSharedDataQueryTimeout(
+          prisma.gameBest.findMany({
+            where: {
+              userId: { in: userIds },
+              gameId: curriculumRecord.gameId,
+            },
+            select: {
+              userId: true,
+              bestScore: true,
+              bestTimeMs: true,
+            },
+          }),
+          "teacher-class-curriculum-evidence-best",
+        ),
+  ]);
+
+  const learnerByUserId = new Map(
+    learners
+      .filter((learner) => learner.userId)
+      .map((learner) => [learner.userId as string, learner]),
+  );
+  const judgementByLearnerId = new Map(
+    currentJudgements.map((judgement) => [
+      judgement.learnerId,
+      {
+        note: judgement.note ?? null,
+        rubricLevelOverride:
+          (judgement.rubricLevelOverride as MathCurriculumTeacherJudgement["rubricLevelOverride"]) ??
+          null,
+        supportLevelOverride:
+          (judgement.supportLevelOverride as MathCurriculumTeacherJudgement["supportLevelOverride"]) ??
+          null,
+        countedEachObjectOnce: judgement.countedEachObjectOnce,
+        skippedDoubleCounted: judgement.skippedDoubleCounted,
+        matchedNumeralCorrectly: judgement.matchedNumeralCorrectly,
+        neededPrompts: judgement.neededPrompts,
+        updatedAt: judgement.updatedAt.toISOString(),
+      } satisfies MathCurriculumTeacherJudgement,
+    ]),
+  );
+  const historyByLearnerId = new Map<string, MathCurriculumTeacherJudgementHistoryEntry[]>();
+  for (const row of historyRows) {
+    const entries = historyByLearnerId.get(row.learnerId) ?? [];
+    if (entries.length < 5) {
+      entries.push({
+        note: row.note ?? null,
+        rubricLevelOverride:
+          (row.rubricLevelOverride as MathCurriculumTeacherJudgement["rubricLevelOverride"]) ??
+          null,
+        supportLevelOverride:
+          (row.supportLevelOverride as MathCurriculumTeacherJudgement["supportLevelOverride"]) ??
+          null,
+        countedEachObjectOnce: row.countedEachObjectOnce,
+        skippedDoubleCounted: row.skippedDoubleCounted,
+        matchedNumeralCorrectly: row.matchedNumeralCorrectly,
+        neededPrompts: row.neededPrompts,
+        updatedAt: row.recordedAt.toISOString(),
+        recordedAt: row.recordedAt.toISOString(),
+      });
+      historyByLearnerId.set(row.learnerId, entries);
+    }
+  }
+  const attemptsByLearnerId = new Map<
+    string,
+    Array<{ gameLevelId: string; score: number; timeMs: number; submittedAt: string }>
+  >();
+  for (const attempt of attempts) {
+    const learner = learnerByUserId.get(attempt.userId);
+    if (!learner) {
+      continue;
+    }
+    const rows = attemptsByLearnerId.get(learner.id) ?? [];
+    rows.push({
+      gameLevelId: attempt.gameLevelId,
+      score: attempt.score,
+      timeMs: attempt.timeMs,
+      submittedAt: attempt.submittedAt.toISOString(),
+    });
+    attemptsByLearnerId.set(learner.id, rows);
+  }
+  const bestByLearnerId = new Map<string, { bestScore: number | null; bestTimeMs: number | null }>();
+  for (const best of bestRows) {
+    const learner = learnerByUserId.get(best.userId);
+    if (!learner) {
+      continue;
+    }
+    bestByLearnerId.set(learner.id, {
+      bestScore: best.bestScore,
+      bestTimeMs: best.bestTimeMs,
+    });
+  }
+
+  return learners.map((learner) => ({
+    learner: {
+      id: learner.id,
+      classId: learner.classId,
+      userId: learner.userId,
+      name: learner.name,
+      linkedAccount: Boolean(learner.userId),
+    },
+    evidence: buildTeacherCurriculumEvidenceSummary({
+      competencyId: input.competencyId,
+      attempts: attemptsByLearnerId.get(learner.id) ?? [],
+      bestScore: bestByLearnerId.get(learner.id)?.bestScore ?? null,
+      bestTimeMs: bestByLearnerId.get(learner.id)?.bestTimeMs ?? null,
+      teacherJudgement: judgementByLearnerId.get(learner.id) ?? null,
+      teacherJudgementHistory: historyByLearnerId.get(learner.id) ?? [],
+    }),
   }));
 }

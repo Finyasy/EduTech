@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseJsonBody } from "@/lib/server/request";
+import {
+  isDatabaseFailureError,
+  parseJsonBody,
+  toDatabaseFailureResponse,
+} from "@/lib/server/request";
 import { getTeacherOwnerKey } from "@/lib/server/teach-access";
 import { addTeacherClassroom } from "@/lib/server/teacher-store";
 
@@ -36,6 +40,9 @@ export async function POST(request: Request) {
     const classroom = await addTeacherClassroom(ownerKey, payload.data);
     return NextResponse.json({ classroom }, { status: 201 });
   } catch (error) {
+    if (isDatabaseFailureError(error)) {
+      return toDatabaseFailureResponse(error, "teacher-class-create");
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to add class." },
       { status: 400 },

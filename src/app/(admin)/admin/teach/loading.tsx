@@ -8,7 +8,7 @@ export default function TeachLoading() {
         </div>
       </div>
       <main className="mx-auto w-full max-w-6xl px-6 pb-20 pt-8">
-        <div className="mb-8 rounded-3xl border border-white/80 bg-white/92 p-6 shadow-sm">
+        <div className="mb-8 rounded-3xl border border-white/80 bg-white/95 p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-600">
             Staff workspace
           </p>
@@ -19,7 +19,7 @@ export default function TeachLoading() {
             The classroom shell is ready while we connect assignments, session status, and course alignment.
           </p>
         </div>
-        <div className="rounded-3xl border border-white/80 bg-white/92 p-6 shadow-sm">
+        <div className="rounded-3xl border border-white/80 bg-white/95 p-6 shadow-sm">
           <div className="mb-5 flex gap-2">
             {Array.from({ length: 4 }).map((_, index) => (
               <div

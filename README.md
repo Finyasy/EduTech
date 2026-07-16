@@ -8,6 +8,8 @@ EduTech is a gamified learning platform for logic and mathematics. Students lear
 - Lesson videos, notes, and quizzes (multiple choice + short answer)
 - Game catalog with levels, attempts, and best scores
 - Student progress tracking (continue watching, streaks, completions)
+- Learner artifact submissions for lesson build evidence
+- Mastery rubric and score schema for AI, coding, and math growth
 - Admin workflows for creating/editing courses and lessons
 - Mock data fallback when the database isn’t configured
 
@@ -23,7 +25,7 @@ EduTech is a gamified learning platform for logic and mathematics. Students lear
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20.19+ (older 20.x fails to load the Vitest/Vite 7 test tooling)
 - pnpm 9+
 - PostgreSQL (optional for local development)
 
@@ -50,6 +52,7 @@ MIGRATE_DATABASE_URL="postgresql://USER:PASSWORD@DIRECT_HOST:5432/DB"
 # Clerk (required for auth UI)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_..."
 CLERK_SECRET_KEY="sk_..."
+CLERK_WEBHOOK_SIGNING_SECRET="whsec_..."
 NEXT_PUBLIC_APP_URL="https://your-domain.vercel.app"
 
 # Comma-separated list of admin emails
@@ -57,6 +60,9 @@ ADMIN_EMAILS="admin@example.com,other@example.com"
 
 # Comma-separated list of teacher emails
 TEACHER_EMAILS="teacher@example.com,other-teacher@example.com"
+
+# Optional: Sentry error tracking (disabled when unset)
+NEXT_PUBLIC_SENTRY_DSN="https://...ingest.sentry.io/..."
 ```
 
 Notes:
@@ -106,6 +112,8 @@ Open `http://localhost:3000`.
 - `src/lib` — server helpers and utilities
 - `prisma` — schema, migrations, and seed script
 - `public` — static assets
+- `docs/README.md` — documentation index for setup, auth, runtime, and release guides
+- `docs/CODEX_MARKDOWN_GUIDE.md` — Codex Markdown and future skill metadata rules
 
 ## Vercel Deployment
 

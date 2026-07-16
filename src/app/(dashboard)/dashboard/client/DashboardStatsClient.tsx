@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import MissionArtwork from "@/components/shared/MissionArtwork";
 import {
   getLearnerBadgesFromStats,
   getLearnerRecommendationFromStats,
@@ -89,48 +88,44 @@ export default function DashboardStatsClient() {
       )}
 
       <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-        <article className="rounded-[2.5rem] border border-white/10 bg-[linear-gradient(145deg,#07142d_0%,#0f2356_32%,#14346f_62%,#0b1f4d_100%)] p-6 text-white shadow-skyline md:p-8">
-          <MissionArtwork
-            className="mb-6 h-56 border-white/15"
-            imageClassName="object-[center_42%]"
-            label="Learner dashboard mission studio"
-            priority
-          />
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/58">
-            Progress cockpit
+        <article className="rounded-[2.2rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
+            Progress overview
           </p>
           {stats.continueWatching ? (
             <>
               <h2
-                className="mt-3 text-3xl font-semibold"
+                className="mt-3 text-3xl font-semibold text-slate-950"
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 Resume {stats.continueWatching.lessonTitle}
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72">
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
                 {stats.continueWatching.courseTitle} is already in motion. Pick up where you left
                 off and turn today&apos;s focus into visible progress.
               </p>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[1.5rem] border border-white/10 bg-white/8 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/52">
+                <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                     Resume point
                   </p>
-                  <p className="mt-2 text-2xl font-semibold">
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
                     {stats.continueWatching.watchPercent}%
                   </p>
                 </div>
-                <div className="rounded-[1.5rem] border border-white/10 bg-white/8 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/52">
+                <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                     This week
                   </p>
-                  <p className="mt-2 text-2xl font-semibold">{stats.completedThisWeek}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {stats.completedThisWeek}
+                  </p>
                 </div>
-                <div className="rounded-[1.5rem] border border-white/10 bg-white/8 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/52">
+                <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                     Streak
                   </p>
-                  <p className="mt-2 text-2xl font-semibold">
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
                     {stats.streakDays === 0 ? "0" : stats.streakDays}
                   </p>
                 </div>
@@ -138,13 +133,13 @@ export default function DashboardStatsClient() {
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
                   href={stats.continueWatching.href}
-                  className="inline-flex min-h-12 items-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
+                  className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
                 >
                   Resume lesson
                 </Link>
                 <Link
                   href="/courses"
-                  className="inline-flex min-h-12 items-center rounded-full border border-white/14 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
+                  className="inline-flex min-h-12 items-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
                 >
                   Browse missions
                 </Link>
@@ -153,12 +148,12 @@ export default function DashboardStatsClient() {
           ) : (
             <>
               <h2
-                className="mt-3 text-3xl font-semibold"
+                className="mt-3 text-3xl font-semibold text-slate-950"
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 Your dashboard is ready for the first mission.
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72">
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
                 Start one course and this space will begin tracking mastery, streaks, and what to
                 open next.
               </p>
@@ -170,19 +165,19 @@ export default function DashboardStatsClient() {
                 ].map((item) => (
                   <div
                     key={item.label}
-                    className="rounded-[1.5rem] border border-white/10 bg-white/8 p-4"
+                    className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4"
                   >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/52">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                       {item.label}
                     </p>
-                    <p className="mt-2 text-2xl font-semibold">{item.value}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950">{item.value}</p>
                   </div>
                 ))}
               </div>
               <div className="mt-6">
                 <Link
                   href="/courses"
-                  className="inline-flex min-h-12 items-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5"
+                  className="inline-flex min-h-12 items-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
                 >
                   Explore courses
                 </Link>
@@ -192,7 +187,7 @@ export default function DashboardStatsClient() {
         </article>
 
         <div className="space-y-6">
-          <article className="glass-shell rounded-[2.2rem] border border-white/70 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+          <article className="rounded-[2.2rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
               Daily quest
             </p>
@@ -207,7 +202,7 @@ export default function DashboardStatsClient() {
             </p>
             <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,#0b1f4d_0%,#0f2356_42%,#22c55e_100%)] transition-all"
+                className="h-full rounded-full bg-[linear-gradient(90deg,#0b1f4d_0%,#0f2356_42%,#22c55e_100%)]"
                 style={{ width: `${dailyGoalPercent}%` }}
               />
             </div>
@@ -216,7 +211,7 @@ export default function DashboardStatsClient() {
             </p>
           </article>
 
-          <article className="glass-shell rounded-[2.2rem] border border-white/70 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+          <article className="rounded-[2.2rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
               Badge shelf
             </p>
@@ -235,7 +230,7 @@ export default function DashboardStatsClient() {
         </div>
       </section>
 
-      <section className="glass-shell rounded-[2.35rem] border border-white/70 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+      <section className="rounded-[2.35rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
@@ -258,19 +253,19 @@ export default function DashboardStatsClient() {
               label: "AI concepts",
               value: aiMastery,
               barClass: "from-emerald-300 via-lime-200 to-emerald-100",
-              panelClass: "border-emerald-100 bg-emerald-50/88",
+              panelClass: "border-emerald-100 bg-emerald-50/90",
             },
             {
               label: "Coding skills",
               value: codingMastery,
               barClass: "from-sky-300 via-cyan-200 to-blue-100",
-              panelClass: "border-sky-100 bg-sky-50/88",
+              panelClass: "border-sky-100 bg-sky-50/90",
             },
             {
               label: "Math skills",
               value: mathMastery,
               barClass: "from-amber-300 via-yellow-200 to-amber-100",
-              panelClass: "border-amber-100 bg-amber-50/88",
+              panelClass: "border-amber-100 bg-amber-50/90",
             },
           ].map((metric) => (
             <article
@@ -291,7 +286,7 @@ export default function DashboardStatsClient() {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1.14fr_0.86fr]">
-        <article className="glass-shell rounded-[2.35rem] border border-white/70 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+        <article className="rounded-[2.35rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
             Next mission recommendation
           </p>
@@ -331,7 +326,7 @@ export default function DashboardStatsClient() {
         </article>
 
         <div className="grid gap-6">
-          <article className="glass-shell rounded-[2.2rem] border border-white/70 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+          <article className="rounded-[2.2rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
               Streak
             </p>
@@ -350,7 +345,7 @@ export default function DashboardStatsClient() {
             </p>
           </article>
 
-          <article className="glass-shell rounded-[2.2rem] border border-white/70 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
+          <article className="rounded-[2.2rem] border border-white/70 bg-white/95 p-6 shadow-[0_20px_56px_rgba(15,23,42,0.08)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
               Completed
             </p>
