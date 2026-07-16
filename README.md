@@ -25,7 +25,7 @@ EduTech is a gamified learning platform for logic and mathematics. Students lear
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20.19+ (older 20.x fails to load the Vitest/Vite 7 test tooling)
 - pnpm 9+
 - PostgreSQL (optional for local development)
 
